@@ -7,7 +7,7 @@ Of course there is `numpy.ma.MaskedArray` around for the very same reason. Never
 it might sometimes be annoying to carry a separate mask array around. And in those cases,
 using a set of `numpy`-compatible functions for the same job will do just fine.
 
-This module provides such an implementation for several standard `numpy` functions, that 
+This package provides such an implementation for several standard `numpy` functions, that 
 treat integer arrays in such a way, that the lowest negative integer resembles `NaN`.
 
 The library provides an implementation using only standard `numpy` functions and
