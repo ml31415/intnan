@@ -57,7 +57,7 @@ class Clean(Command):
 
 
 setup(name='intnan',
-      version="0.1",
+      version="0.1.1",
       author="Michael Loeffler",
       author_email="ml@occam.com.ua",
       license='BSD',

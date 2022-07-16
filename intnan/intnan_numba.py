@@ -3,8 +3,9 @@
 import numpy as np
 import numba as nb
 
+
 from .intnan_np import (INTNAN32, INTNAN64,  NANVALS, nanval, isnan, asfloat,
-                        nanequal, nanclose)
+                        nanequal, nanclose, __all__)
 
 
 def nancalc(func):

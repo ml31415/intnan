@@ -10,9 +10,9 @@ Large negative values are used, so that especially python indexing
 
 import numpy as np
 
-__all__ = ['NANVALS', 'INTNAN32', 'INTNAN64', 'nanval', 'isnan', 'fix_invalid',
-           'nanmin', 'nanmax', 'nanstd', 'nanvar', 'nansum',
-           'nanequal', 'nanclose', 'nancumsum', 'allnan', 'anynan']
+__all__ = ['NANVALS', 'INTNAN32', 'INTNAN64', 'nanval', 'isnan', 'fix_invalid', 'asfloat',
+           'allnan', 'anynan', 'nanmin', 'nanmax', 'nanmaximum', 'nanminimum', 'nanstd', 'nanvar',
+           'nansum', 'nancumsum', 'nanprod', 'nanequal', 'nanclose']
 
 INTNAN32 = np.iinfo('int32').min  # -2147483648
 INTNAN64 = np.iinfo('int64').min  # -9223372036854775808
