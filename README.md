@@ -1,3 +1,7 @@
+[![GitHub Workflow CI Status](https://img.shields.io/github/workflow/status/ml31415/intnan/Python%20package?logo=github&style=flat)](https://github.com/ml31415/intnan/actions)
+[![Supported Versions](https://img.shields.io/pypi/pyversions/intnan.svg)](https://pypi.org/project/intnan)
+[![PyPI](https://img.shields.io/pypi/v/intnan.svg?style=flat)](https://pypi.org/project/intnan/)
+
 # intnan
 
 Integer data types lack special values for `-inf`, `inf` and `NaN`. Especially
