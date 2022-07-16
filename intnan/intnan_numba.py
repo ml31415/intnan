@@ -25,11 +25,14 @@ def isnan_vec(x, nan):
 
 
 @nancalc
-def replacenan(x, nan, replacement=0):
-    ret = np.zeros_like(x)
+def fix_invalid(x, nan, copy=True, fill_value=0):
+    if copy:
+        ret = np.empty_like(x)
+    else:
+        ret = x
     for i in nb.prange(len(x.flat)):
         if isnan_vec(x[i], nan):
-            ret.flat[i] = replacement
+            ret.flat[i] = fill_value
         else:
             ret.flat[i] = x[i]
     return ret

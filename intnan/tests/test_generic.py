@@ -91,11 +91,17 @@ def test_allnan(inn, ninp):
     assert inn.allnan(ninp.a) == (ninp.nanstate == 'allnans')
 
 
-def test_replacenan(inn, ninp):
-    repl = inn.replacenan(ninp.a)
-    assert not inn.anynan(repl)
-    assert np.all(repl[ninp.a_nanmask] == 0)
-    assert np.all(repl[~ninp.a_nanmask] == ninp.a[~ninp.a_nanmask])
+@pytest.mark.parametrize("copy", (True, False))
+def test_fix_invalid(inn, ninp, copy):
+    x = ninp.a.copy()
+    fixed = inn.fix_invalid(x, copy=copy)
+    assert not inn.anynan(fixed)
+    assert np.all(fixed[ninp.a_nanmask] == 0)
+    assert np.all(fixed[~ninp.a_nanmask] == ninp.a[~ninp.a_nanmask])
+    if copy:
+        assert x is not fixed
+    else:
+        assert x is fixed
 
 
 @pytest.mark.filterwarnings("ignore:All-NaN slice")
@@ -144,7 +150,7 @@ def test_nancumsum(inn, ninp):
     if ninp.nanstate == 'allnans':
         ref = np.full_like(ninp.a, inn.nanval(ninp.a))
     else:
-        ref = np.cumsum(inn.replacenan(ninp.a))
+        ref = np.cumsum(inn.fix_invalid(ninp.a))
         nanval = inn.nanval(ninp.a)
         for i, val in enumerate(ninp.a):
             if inn.isnan(val):

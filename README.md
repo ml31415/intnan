@@ -11,8 +11,8 @@ This module provides such an implementation for several standard `numpy` functio
 treat integer arrays in such a way, that the lowest negative integer resembles `NaN`.
 
 The library provides an implementation using only standard `numpy` functions and
-another speed optimized implementation using `numba`. The `numba` implementation
-is automatically selected, when it is available for import.
+another implementation using `numba`, for functions that allow major speed gains. 
+The `numba` implementation is automatically selected, when it is available for import.
 
 ## functions
 
@@ -20,7 +20,7 @@ The following list of functions is provided by `intnan`.
 
 - nanval(x)
 - isnan(x)
-- replacenan(x, replacement=0)
+- fix_invalid(x, copy=True, fill_value=0)
 - asfloat(x)
 - anynan(x)
 - allnan(x)

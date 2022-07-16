@@ -10,7 +10,7 @@ Large negative values are used, so that especially python indexing
 
 import numpy as np
 
-__all__ = ['NANVALS', 'INTNAN32', 'INTNAN64', 'nanval', 'isnan', 'replacenan',
+__all__ = ['NANVALS', 'INTNAN32', 'INTNAN64', 'nanval', 'isnan', 'fix_invalid',
            'nanmin', 'nanmax', 'nanstd', 'nanvar', 'nansum',
            'nanequal', 'nanclose', 'nancumsum', 'allnan', 'anynan']
 
@@ -43,27 +43,35 @@ def isnan(x):
             return False
 
 
-def replacenan(x, replacement=0):
+def fix_invalid(x, copy=True, fill_value=0):
     nanval = NANVALS.get(x.dtype.char, 0)
     if nanval is np.nan:
-        return np.where(np.isnan(x), replacement, x)
+        if copy:
+            return np.where(np.isnan(x), fill_value, x)
+        else:
+            x[np.isnan(x)] = fill_value
+            return x
     elif nanval is None:
         ret = np.zeros_like(x)
         x_flat = x.flat
         for i in range(x.size):
             if x_flat[i] is None:
-                ret[i] = replacement
+                ret[i] = fill_value
             else:
                 ret[i] = x_flat[i]
         return ret
     else:
-        return np.where(x == nanval, replacement, x)
+        if copy:
+            return np.where(x == nanval, fill_value, x)
+        else:
+            x[x == nanval] = fill_value
+            return x
 
 
 def asfloat(x):
     if isinstance(x.dtype.type, np.floating):
         return x.copy()
-    return replacenan(x, np.nan)
+    return fix_invalid(x, fill_value=np.nan)
 
 
 def anynan(x):
@@ -152,7 +160,7 @@ def nanprod(x):
 
 def nancumsum(x):
     nanval = NANVALS.get(x.dtype.char, 0)
-    result = np.cumsum(replacenan(x))
+    result = np.cumsum(fix_invalid(x))
 
     if anynan(x):
         # cumsum is undefined before the first valid number appears, so we need to replace
