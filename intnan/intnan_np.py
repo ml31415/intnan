@@ -70,8 +70,10 @@ def fix_invalid(x, copy=True, fill_value=0):
 
 
 def asfloat(x):
-    if isinstance(x.dtype.type, np.floating):
+    if issubclass(x.dtype.type, np.floating):
         return x.copy()
+    elif issubclass(x.dtype.type, np.bool_):
+        return np.array(x, dtype=float)
     return fix_invalid(x, fill_value=np.nan)
 
 
