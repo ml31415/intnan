@@ -4,8 +4,17 @@ import numpy as np
 import numba as nb
 
 
-from .intnan_np import (INTNAN32, INTNAN64,  NANVALS, nanval, isnan, asfloat,
-                        nanequal, nanclose, __all__)
+from .intnan_np import (
+    INTNAN32,
+    INTNAN64,
+    NANVALS,
+    nanval,
+    isnan,
+    asfloat,
+    nanequal,
+    nanclose,
+    __all__,
+)
 
 
 def nancalc(func):
@@ -184,6 +193,7 @@ def _nanvar(x, nan, ddof=0):
             inc = x_ - mean
             ex_mean += inc * inc
     return ex_mean / (cnt - ddof)
+
 
 _jnanvar = nb.njit(_nanvar)
 nanvar = nancalc(_nanvar)

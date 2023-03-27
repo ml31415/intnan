@@ -10,19 +10,52 @@ Large negative values are used, so that especially python indexing
 
 import numpy as np
 
-__all__ = ['NANVALS', 'INTNAN32', 'INTNAN64', 'nanval', 'isnan', 'fix_invalid', 'asfloat',
-           'allnan', 'anynan', 'nanmin', 'nanmax', 'nanmaximum', 'nanminimum',
-           'nanmean', 'nanstd', 'nanvar', 'nansum', 'nancumsum', 'nanprod',
-           'nanequal', 'nanclose']
+__all__ = [
+    "NANVALS",
+    "INTNAN32",
+    "INTNAN64",
+    "nanval",
+    "isnan",
+    "fix_invalid",
+    "asfloat",
+    "allnan",
+    "anynan",
+    "nanmin",
+    "nanmax",
+    "nanmaximum",
+    "nanminimum",
+    "nanmean",
+    "nanstd",
+    "nanvar",
+    "nansum",
+    "nancumsum",
+    "nanprod",
+    "nanequal",
+    "nanclose",
+]
 
-INTNAN32 = np.iinfo('int32').min  # -2147483648
-INTNAN64 = np.iinfo('int64').min  # -9223372036854775808
-NANVALS = dict(d=np.nan, f=np.nan, e=np.nan, S=b'', l=INTNAN64, q=INTNAN32, i=INTNAN32,
-               b=-1, h=-1, B=0, H=0, L=0, Q=0, O=None)
+INTNAN32 = np.iinfo("int32").min  # -2147483648
+INTNAN64 = np.iinfo("int64").min  # -9223372036854775808
+NANVALS = dict(
+    d=np.nan,
+    f=np.nan,
+    e=np.nan,
+    S=b"",
+    l=INTNAN64,
+    q=INTNAN32,
+    i=INTNAN32,
+    b=-1,
+    h=-1,
+    B=0,
+    H=0,
+    L=0,
+    Q=0,
+    O=None,
+)
 
 
 def nanval(x):
-    """ Return the corresponding NAN value for a column """
+    """Return the corresponding NAN value for a column"""
     return NANVALS.get(x.dtype.char)
 
 
@@ -35,7 +68,7 @@ def isnan(x):
             return np.array([val is None for val in x])
         else:
             return x == nanval
-    elif x in {np.nan, None, '', INTNAN32, INTNAN64}:
+    elif x in {np.nan, None, "", INTNAN32, INTNAN64}:
         return True
     else:
         try:
@@ -105,7 +138,7 @@ def nanmax(x):
         try:
             return np.max(x[x != nanval])
         except ValueError as e:
-            if 'zero-size' in str(e):
+            if "zero-size" in str(e):
                 return nanval
             else:
                 raise
@@ -119,14 +152,14 @@ def nanmin(x):
         try:
             return np.min(x[x != nanval])
         except ValueError as e:
-            if 'zero-size' in str(e):
+            if "zero-size" in str(e):
                 return nanval
             else:
                 raise
 
 
 def nanmaximum(x, y):
-    """ Does the same as numpy.maximum (element-wise maximum operation of two arrays) but ignores NaNs """
+    """Does the same as numpy.maximum (element-wise maximum operation of two arrays) but ignores NaNs"""
     z = np.maximum(x, y)
     badx = isnan(x)
     bady = isnan(y)
@@ -136,7 +169,7 @@ def nanmaximum(x, y):
 
 
 def nanminimum(x, y):
-    """ Does the same as numpy.minimum (element-wise minimum operation of two arrays) but ignores NaNs """
+    """Does the same as numpy.minimum (element-wise minimum operation of two arrays) but ignores NaNs"""
     z = np.minimum(x, y)
     badx = isnan(x)
     bady = isnan(y)
@@ -171,7 +204,7 @@ def nancumsum(x):
         # TODO: Finding the first instance of a value this way is quite some overhead
         good_idx = np.where(~isnan(x))[0]
         if len(good_idx) > 0:
-            result[:good_idx[0]] = nanval
+            result[: good_idx[0]] = nanval
         else:
             result[:] = nanval
     return result
@@ -182,7 +215,7 @@ def nanmean(x):
     if nanval is np.nan:
         return np.nanmean(x)
     else:
-        with np.errstate(invalid='ignore'):
+        with np.errstate(invalid="ignore"):
             return np.mean(x[x != nanval])
 
 
@@ -191,7 +224,7 @@ def nanvar(x, ddof=0):
     if nanval is np.nan:
         return np.nanvar(x, ddof=ddof)
     else:
-        with np.errstate(invalid='ignore'):
+        with np.errstate(invalid="ignore"):
             return np.var(x[x != nanval], ddof=ddof)
 
 
@@ -200,7 +233,7 @@ def nanstd(x, ddof=0):
     if nanval is np.nan:
         return np.nanstd(x, ddof=ddof)
     else:
-        with np.errstate(invalid='ignore'):
+        with np.errstate(invalid="ignore"):
             return np.std(x[x != nanval], ddof=ddof)
 
 
