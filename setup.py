@@ -71,7 +71,7 @@ setup(
     keywords=["integer", "nan", "missing values", "intnan"],
     packages=["intnan"],
     install_requires=[],
-    setup_requires=["pytest-runner"],
+    setup_requires=["pytest-runner", "versioneer"],
     tests_require=["pytest", "numpy", "numba"],
     classifiers=[
         "Development Status :: 4 - Beta",
@@ -81,6 +81,6 @@ setup(
         "Programming Language :: Python :: 3.9",
         "Programming Language :: Python :: 3.10",
     ],
-    cmdclass={"clean": Clean, "version": versioneer.get_cmdclass()},
+    cmdclass=versioneer.get_cmdclass({"clean": Clean}),
     project_urls={"Source": "https://github.com/ml31415/intnan"},
 )
