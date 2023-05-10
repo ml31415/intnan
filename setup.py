@@ -3,6 +3,7 @@
 import os
 from setuptools import setup, Command
 from shutil import rmtree
+import versioneer
 
 base_path = os.path.dirname(os.path.abspath(__file__))
 
@@ -58,7 +59,7 @@ class Clean(Command):
 
 setup(
     name="intnan",
-    version="0.1.3",
+    version=versioneer.get_version(),
     author="Michael Loeffler",
     author_email="ml@occam.com.ua",
     license="BSD",
@@ -80,6 +81,6 @@ setup(
         "Programming Language :: Python :: 3.9",
         "Programming Language :: Python :: 3.10",
     ],
-    cmdclass={"clean": Clean},
+    cmdclass={"clean": Clean, "version": versioneer.get_cmdclass()},
     project_urls={"Source": "https://github.com/ml31415/intnan"},
 )
