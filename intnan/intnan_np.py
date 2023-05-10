@@ -41,6 +41,7 @@ NANVALS = dict(
     f=np.nan,
     e=np.nan,
     S=b"",
+    U="",
     l=INTNAN64,
     q=INTNAN32,
     i=INTNAN32,
@@ -54,21 +55,22 @@ NANVALS = dict(
 )
 
 
-def nanval(x):
-    """Return the corresponding NAN value for a column"""
-    return NANVALS.get(x.dtype.char)
+def nanval(x, default=0):
+    """Return the corresponding NAN value for a column or type"""
+    dtype = x.dtype if isinstance(x, np.ndarray) else np.dtype(x)
+    return NANVALS.get(dtype.char, default)
 
 
 def isnan(x):
     if isinstance(x, np.ndarray):
-        nanval = NANVALS.get(x.dtype.char, 0)
-        if nanval is np.nan:
+        nv = nanval(x)
+        if nv is np.nan:
             return np.isnan(x)
-        elif nanval is None:
+        elif nv is None:
             return np.array([val is None for val in x])
         else:
-            return x == nanval
-    elif x in {np.nan, None, "", INTNAN32, INTNAN64}:
+            return x == nv
+    elif x in {np.nan, None, b"", "", INTNAN32, INTNAN64}:
         return True
     else:
         try:
@@ -78,14 +80,14 @@ def isnan(x):
 
 
 def fix_invalid(x, copy=True, fill_value=0):
-    nanval = NANVALS.get(x.dtype.char, 0)
-    if nanval is np.nan:
+    nv = nanval(x)
+    if nv is np.nan:
         if copy:
             return np.where(np.isnan(x), fill_value, x)
         else:
             x[np.isnan(x)] = fill_value
             return x
-    elif nanval is None:
+    elif nv is None:
         ret = np.zeros_like(x)
         x_flat = x.flat
         for i in range(x.size):
@@ -96,9 +98,9 @@ def fix_invalid(x, copy=True, fill_value=0):
         return ret
     else:
         if copy:
-            return np.where(x == nanval, fill_value, x)
+            return np.where(x == nv, fill_value, x)
         else:
-            x[x == nanval] = fill_value
+            x[x == nv] = fill_value
             return x
 
 
@@ -110,50 +112,59 @@ def asfloat(x):
     return fix_invalid(x, fill_value=np.nan)
 
 
+def asint(x):
+    if issubclass(x.dtype.type, np.integer):
+        return x.copy()
+    elif issubclass(x.dtype.type, np.bool_):
+        return np.array(x, dtype=int)
+    nv = nanval(int)
+    return np.nan_to_num(x, nan=nv, posinf=nv, neginf=nv).astype(int)
+
+
 def anynan(x):
-    nanval = NANVALS.get(x.dtype.char, 0)
-    if nanval is np.nan:
+    nv = nanval(x)
+    if nv is np.nan:
         return np.any(np.isnan(x))
-    elif nanval is None:
+    elif nv is None:
         return any(val is None for val in x.flat)
     else:
-        return nanval in x
+        return nv in x
 
 
 def allnan(x):
-    nanval = NANVALS.get(x.dtype.char, 0)
-    if nanval is np.nan:
+    nv = nanval(x)
+    if nv is np.nan:
         return np.all(np.isnan(x))
-    elif nanval is None:
+    elif nv is None:
         return all(val is None for val in x.flat)
     else:
-        return np.all(x == nanval)
+        return np.all(x == nv)
 
 
 def nanmax(x):
-    nanval = NANVALS.get(x.dtype.char, 0)
-    if nanval is np.nan:
+    nv = nanval(x)
+    if nv is np.nan:
         return np.nanmax(x)
     else:
         try:
-            return np.max(x[x != nanval])
+            return np.max(x[x != nv])
         except ValueError as e:
             if "zero-size" in str(e):
-                return nanval
+                return nv
             else:
                 raise
 
 
 def nanmin(x):
-    nanval = NANVALS.get(x.dtype.char, 0)
-    if nanval is np.nan:
+    nv = nanval(x)
+    if nv is np.nan:
         return np.nanmin(x)
     else:
         try:
-            return np.min(x[x != nanval])
+            return np.min(x[x != nv])
         except ValueError as e:
             if "zero-size" in str(e):
-                return nanval
+                return nv
             else:
                 raise
 
@@ -179,23 +190,23 @@ def nanminimum(x, y):
 
 
 def nansum(x):
-    nanval = NANVALS.get(x.dtype.char, 0)
-    if nanval is np.nan:
+    nv = nanval(x)
+    if nv is np.nan:
         return np.nansum(x)
     else:
-        return np.sum(x[x != nanval])
+        return np.sum(x[x != nv])
 
 
 def nanprod(x):
-    nanval = NANVALS.get(x.dtype.char, 0)
-    if nanval is np.nan:
+    nv = nanval(x)
+    if nv is np.nan:
         return np.nanprod(x, dtype=np.float64)
     else:
-        return np.prod(x[x != nanval])
+        return np.prod(x[x != nv])
 
 
 def nancumsum(x):
-    nanval = NANVALS.get(x.dtype.char, 0)
+    nv = nanval(x)
     result = np.cumsum(fix_invalid(x))
 
     if anynan(x):
@@ -204,43 +215,43 @@ def nancumsum(x):
         # TODO: Finding the first instance of a value this way is quite some overhead
         good_idx = np.where(~isnan(x))[0]
         if len(good_idx) > 0:
-            result[: good_idx[0]] = nanval
+            result[: good_idx[0]] = nv
         else:
-            result[:] = nanval
+            result[:] = nv
     return result
 
 
 def nanmean(x):
-    nanval = NANVALS.get(x.dtype.char, 0)
-    if nanval is np.nan:
+    nv = nanval(x)
+    if nv is np.nan:
         return np.nanmean(x)
     else:
         with np.errstate(invalid="ignore"):
-            return np.mean(x[x != nanval])
+            return np.mean(x[x != nv])
 
 
 def nanvar(x, ddof=0):
-    nanval = NANVALS.get(x.dtype.char, 0)
-    if nanval is np.nan:
+    nv = nanval(x)
+    if nv is np.nan:
         return np.nanvar(x, ddof=ddof)
     else:
         with np.errstate(invalid="ignore"):
-            return np.var(x[x != nanval], ddof=ddof)
+            return np.var(x[x != nv], ddof=ddof)
 
 
 def nanstd(x, ddof=0):
-    nanval = NANVALS.get(x.dtype.char, 0)
-    if nanval is np.nan:
+    nv = nanval(x)
+    if nv is np.nan:
         return np.nanstd(x, ddof=ddof)
     else:
         with np.errstate(invalid="ignore"):
-            return np.std(x[x != nanval], ddof=ddof)
+            return np.std(x[x != nv], ddof=ddof)
 
 
 def nanequal(x, y):
     """Treat NaN as an ordinary value when comparing for equality."""
     if x.dtype != y.dtype:
-        raise TypeError("nanequal requires same data type: %s != %s" % (x.dtype, y.dtype))
+        raise TypeError(f"nanequal requires same data type: {x.dtype} != {y.dtype}")
     if issubclass(x.dtype.type, np.floating) and issubclass(y.dtype.type, np.floating):
         return np.isclose(x, y, 0, 0, equal_nan=True)
     else:
@@ -249,7 +260,7 @@ def nanequal(x, y):
 
 def nanclose(x, y, delta=np.finfo(float).eps):
     if x.dtype != y.dtype:
-        raise TypeError("nanclose requires same data type: %s != %s" % (x.dtype, y.dtype))
+        raise TypeError(f"nanclose requires same data type: {x.dtype} != {y.dtype}")
     if issubclass(x.dtype.type, np.integer):
         return np.isclose(x, y, atol=delta, equal_nan=True)
     elif issubclass(x.dtype.type, str):

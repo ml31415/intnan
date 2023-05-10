@@ -35,7 +35,9 @@ def test_nanval(inn):
 
 
 def test_asfloat(inn):
-    np.testing.assert_array_equal(inn.asfloat(np.array([True, False])), np.array([1.0, 0.0]))
+    np.testing.assert_array_equal(
+        inn.asfloat(np.array([True, False])), np.array([1.0, 0.0])
+    )
     np.testing.assert_array_equal(
         inn.asfloat(np.array([1.0, 0.0, np.nan])), np.array([1.0, 0.0, np.nan])
     )
@@ -45,7 +47,9 @@ def test_asfloat(inn):
 
 
 ninp_list = itertools.product(
-    ["small", "large"], ["nonans", "nans", "allnans"], [np.int64, np.int32, np.float64, np.float32]
+    ["small", "large"],
+    ["nonans", "nans", "allnans"],
+    [np.int64, np.int32, np.float64, np.float32],
 )
 
 
@@ -75,7 +79,9 @@ def ninp(request):
 
 
 @pytest.mark.parametrize(
-    "val", [np.nan, intnan_np.INTNAN32, intnan_np.INTNAN64], ids=["nan", "INTNAN32", "INTNAN64"]
+    "val",
+    [np.nan, intnan_np.INTNAN32, intnan_np.INTNAN64, b"", ""],
+    ids=["nan", "INTNAN32", "INTNAN64", "empty bytes", "empty unicode"],
 )
 def test_isnan(inn, val):
     assert inn.isnan(val)
@@ -224,7 +230,8 @@ def test_nanequal(inn, ninp):
     else:
         clone[51] = inn.nanval(clone)
     assert np.count_nonzero(~inn.nanequal(ninp.a, clone)) == 1
-    clone = clone.astype(np.int16)
+    with np.errstate(invalid="ignore"):
+        clone = clone.astype(np.int16)
     pytest.raises(TypeError, inn.nanequal, ninp.a, clone)
 
 
@@ -244,5 +251,6 @@ def test_nanclose(inn, ninp, tolerance=1e-9):
     else:
         clone[51] = inn.nanval(clone)
     assert np.count_nonzero(~inn.nanclose(ninp.a, clone, tolerance)) == 2
-    clone = clone.astype(np.int16)
+    with np.errstate(invalid="ignore"):
+        clone = clone.astype(np.int16)
     pytest.raises(TypeError, inn.nanclose, ninp.a, clone, tolerance)
