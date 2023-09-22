@@ -14,6 +14,7 @@ __pycache__
 .pytest_cache/
 .benchmarks/
 .coverage
+.hypothesis/
 .project
 .idea/
 .pydevproject
@@ -21,4 +22,5 @@ __pycache__
 build/
 dist/
 intnan.egg-info/
+intnan/_version.py
 !/*.txt

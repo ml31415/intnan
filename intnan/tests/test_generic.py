@@ -1,7 +1,8 @@
-import pytest
 import itertools
 import warnings
+
 import numpy as np
+import pytest
 
 try:
     from types import SimpleNamespace
@@ -35,15 +36,9 @@ def test_nanval(inn):
 
 
 def test_asfloat(inn):
-    np.testing.assert_array_equal(
-        inn.asfloat(np.array([True, False])), np.array([1.0, 0.0])
-    )
-    np.testing.assert_array_equal(
-        inn.asfloat(np.array([1.0, 0.0, np.nan])), np.array([1.0, 0.0, np.nan])
-    )
-    np.testing.assert_array_equal(
-        inn.asfloat(np.array([1, 0, intnan_np.INTNAN64])), np.array([1.0, 0.0, np.nan])
-    )
+    np.testing.assert_array_equal(inn.asfloat(np.array([True, False])), np.array([1.0, 0.0]))
+    np.testing.assert_array_equal(inn.asfloat(np.array([1.0, 0.0, np.nan])), np.array([1.0, 0.0, np.nan]))
+    np.testing.assert_array_equal(inn.asfloat(np.array([1, 0, intnan_np.INTNAN64])), np.array([1.0, 0.0, np.nan]))
 
 
 ninp_list = itertools.product(

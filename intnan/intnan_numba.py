@@ -1,31 +1,32 @@
 """ A bunch of small functions that replace and improve former usage of numexpr and bottleneck """
 
-import numpy as np
-import numba as nb
+from functools import wraps
 
+import numba as nb
+import numpy as np
 
 from .intnan_np import (
     INTNAN32,
     INTNAN64,
     NANVALS,
-    nanval,
-    isnan,
-    asfloat,
-    nanequal,
-    nanclose,
     __all__,
+    asfloat,
+    isnan,
+    nanclose,
+    nanequal,
+    nanval,
 )
 
 
 def nancalc(func):
     jfunc = nb.njit(func)
 
+    @wraps(func)
     def wrapped(*args, **kwargs):
         nv = nanval(args[0])
         args = args + (nv,)
         return jfunc(*args, **kwargs)
 
-    wrapped.__name__ = func.__name__
     return wrapped
 
 

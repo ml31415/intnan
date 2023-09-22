@@ -1,0 +1,53 @@
+[build-system]
+requires = ["setuptools", "setuptools-scm"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "intnan"
+description = "Function collection for handling integers with NaNs."
+dynamic = ["version"]
+readme = {file = "README.md", content-type = "text/markdown"}
+license = {file = "LICENSE.txt"}
+authors = [
+    {name = "Michael Löffler", email = "ml@occam.com.ua"},
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Science/Research",
+    "Intended Audience :: Developers",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Topic :: Scientific/Engineering",
+    "Topic :: Software Development :: Libraries",
+    "License :: OSI Approved :: BSD License",
+]
+keywords = ["integer", "nan", "missing values", "intnan"]
+requires-python = ">=3.9"
+dependencies = ["numpy"]
+
+[project.optional-dependencies]
+dev = [
+    "pytest",
+    "flake8",
+    "numba",
+]
+
+[project.urls]
+source = "https://github.com/ml31415/intnan"
+tracker = "https://github.com/ml31415/intnan/issues"
+
+[tool.black]
+line-length = 120
+
+[tool.isort]
+profile = "black"
+honor_noqa = true
+
+[tool.setuptools.packages.find]
+include = ["intnan*"]
+
+[tool.setuptools_scm]
+write_to = "intnan/_version.py"
