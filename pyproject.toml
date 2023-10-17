@@ -32,6 +32,7 @@ dependencies = ["numpy"]
 [project.optional-dependencies]
 dev = [
     "pytest",
+    "flake8",
     "numba",
 ]
 
