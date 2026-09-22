@@ -8,7 +8,7 @@ Large negative values are used, so that especially python indexing
 (from the end) is unlikely to work.
 """
 
-from typing import Any, TypeAlias, cast
+from typing import Any, TypeAlias, cast, overload
 
 import numpy as np
 import numpy.typing as npt
@@ -66,6 +66,10 @@ def nanval(x: npt.NDArray | npt.DTypeLike, default: NanValue = 0) -> NanValue:
     return NANVALS.get(dtype.char, default)
 
 
+@overload
+def isnan(x: npt.NDArray) -> npt.NDArray[np.bool_]: ...
+@overload
+def isnan(x: np.generic | float | int | complex | str | bytes | None) -> bool: ...
 def isnan(x: npt.NDArray | np.generic | float | int | complex | str | bytes | None) -> bool | npt.NDArray[np.bool_]:
     if isinstance(x, np.ndarray):
         nv = nanval(x)
