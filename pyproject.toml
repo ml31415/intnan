@@ -1,13 +1,14 @@
 [build-system]
-requires = ["setuptools", "setuptools-scm"]
+requires = ["setuptools>=77", "setuptools-scm>=8"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "intnan"
 description = "Function collection for handling integers with NaNs."
 dynamic = ["version"]
-readme = {file = "README.md", content-type = "text/markdown"}
-license = {file = "LICENSE.txt"}
+readme = "README.md"
+license = "BSD-3-Clause"
+license-files = ["LICENSE.txt"]
 authors = [
     {name = "Michael Löffler", email = "ml@occam.com.ua"},
 ]
@@ -22,29 +23,33 @@ classifiers = [
     "Programming Language :: Python :: 3.11",
     "Topic :: Scientific/Engineering",
     "Topic :: Software Development :: Libraries",
-    "License :: OSI Approved :: BSD License",
 ]
 keywords = ["integer", "nan", "missing values", "intnan"]
 requires-python = ">=3.9"
 dependencies = ["numpy"]
 
-[project.optional-dependencies]
+[dependency-groups]
 dev = [
     "pytest",
-    "flake8",
     "numba",
+    "ruff",
 ]
 
 [project.urls]
 source = "https://github.com/ml31415/intnan"
 tracker = "https://github.com/ml31415/intnan/issues"
 
-[tool.black]
+[tool.ruff]
 line-length = 120
+target-version = "py39"
 
-[tool.isort]
-profile = "black"
-honor_noqa = true
+[tool.ruff.lint]
+select = ["E", "F", "W", "I"]
+
+[tool.ruff.lint.per-file-ignores]
+# Re-exports via star import from the package namespace
+"intnan/__init__.py" = ["F403"]
+"intnan/intnan_numba.py" = ["F401"]
 
 [tool.setuptools.packages.find]
 include = ["intnan*"]

@@ -4,7 +4,7 @@ Missing values are handled as special values and functions
 to skip them in processing are provided here.
 
 The special nan values are chosen depending on the array type.
-Large negative values are used, so that especially python indexing 
+Large negative values are used, so that especially python indexing
 (from the end) is unlikely to work.
 """
 

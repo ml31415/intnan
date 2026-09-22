@@ -1,4 +1,4 @@
-""" A bunch of small functions that replace and improve former usage of numexpr and bottleneck """
+"""A bunch of small functions that replace and improve former usage of numexpr and bottleneck"""
 
 from functools import wraps
 
@@ -154,15 +154,6 @@ def nancumsum(x, nan):
             val += x_
         if not isnan_vec(val, nan):
             ret[i] = val
-    return ret
-
-
-@nancalc
-def nanprod(x, nan):
-    ret = 1
-    for x_ in x.flat:
-        if not isnan_vec(x_, nan):
-            ret *= x_
     return ret
 
 

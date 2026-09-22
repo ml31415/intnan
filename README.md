@@ -1,7 +1,7 @@
 [![GitHub Workflow CI Status](https://img.shields.io/github/actions/workflow/status/ml31415/intnan/python-package.yml?branch=master&logo=github&style=flat)](https://github.com/ml31415/intnan/actions)
 [![Supported Versions](https://img.shields.io/pypi/pyversions/intnan.svg)](https://pypi.org/project/intnan)
 [![PyPI](https://img.shields.io/pypi/v/intnan.svg?style=flat)](https://pypi.org/project/intnan/)
-[![Code style: black](https://img.shields.io/badge/code%20style-black-000000.svg)](https://github.com/psf/black)
+[![Ruff](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/ruff/main/assets/badge/v2.json)](https://github.com/astral-sh/ruff)
 
 # intnan
 
