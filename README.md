@@ -38,7 +38,7 @@ or with [uv](https://docs.astral.sh/uv/):
 uv pip install intnan
 ```
 
-The package requires Python 3.10+ and works with numpy 2.x. All public
+The package requires Python 3.12+ and works with numpy 2.4+. All public
 functions are fully type annotated using `numpy.typing`.
 
 ## Usage
@@ -124,7 +124,7 @@ uv run mypy      # type check
 ```
 
 Tests are run against both implementations and a range of dtypes
-(`int32`, `int64`, `float32`, `float64`) in the CI on Python 3.10 through 3.14.
+(`int32`, `int64`, `float32`, `float64`) in the CI on Python 3.12 through 3.14.
 
 ## License
 
