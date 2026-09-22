@@ -36,6 +36,7 @@ dev = [
     "numba",
     "ruff",
     "mypy",
+    "pre-commit",
 ]
 
 [project.urls]

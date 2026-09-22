@@ -50,11 +50,11 @@ counterparts:
 import numpy as np
 import intnan
 
-a = np.array([1, -2 ** 31, 3], dtype=np.int32)  # -2**31 marks a missing value
+a = np.array([1, -(2**31), 3], dtype=np.int32)  # -(2**31) marks a missing value
 
-intnan.isnan(a)        # array([False,  True, False])
-intnan.nansum(a)       # 4
-intnan.nanmean(a)      # 2.0
+intnan.isnan(a)  # array([False,  True, False])
+intnan.nansum(a)  # 4
+intnan.nanmean(a)  # 2.0
 intnan.fix_invalid(a)  # array([1, 0, 3], dtype=int32)
 ```
 
