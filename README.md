@@ -70,6 +70,7 @@ Missing value handling:
 - `isnan(x)` — boolean mask of missing values, works on arrays and scalars
 - `fix_invalid(x, copy=True, fill_value=0)` — replace missing values
 - `asfloat(x)` — convert to a float array, missing values become `NaN`
+- `asint(x)` — convert to an integer array, missing values become the integer missing value
 - `anynan(x)`, `allnan(x)` — test for the presence of missing values
 
 Reductions:
