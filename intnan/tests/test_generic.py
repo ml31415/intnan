@@ -137,6 +137,24 @@ def test_nanmin(inn, ninp):
         np.testing.assert_equal(inn.nanmin(ninp.a), inn.nanval(ninp.a))
 
 
+def test_nanargmax(inn, ninp):
+    if ninp.nanstate == "allnans":
+        pytest.raises(ValueError, inn.nanargmax, ninp.a)
+    else:
+        valid = ~inn.isnan(ninp.a)
+        ref = int(np.flatnonzero(valid & (ninp.a == np.max(ninp.a[valid])))[0])
+        assert inn.nanargmax(ninp.a) == ref
+
+
+def test_nanargmin(inn, ninp):
+    if ninp.nanstate == "allnans":
+        pytest.raises(ValueError, inn.nanargmin, ninp.a)
+    else:
+        valid = ~inn.isnan(ninp.a)
+        ref = int(np.flatnonzero(valid & (ninp.a == np.min(ninp.a[valid])))[0])
+        assert inn.nanargmin(ninp.a) == ref
+
+
 def test_nanmaximum(inn, ninp):
     res = inn.nanmaximum(ninp.a, ninp.b)
     # Wherever a is nan, value from b needs to be picked
@@ -179,6 +197,24 @@ def test_nancumsum(inn, ninp):
     np.testing.assert_allclose(inn.nancumsum(ninp.a), ref, rtol=rtol)
 
 
+def test_nancumprod(inn, ninp):
+    if ninp.nanstate == "allnans":
+        ref = np.full_like(ninp.a, inn.nanval(ninp.a))
+    else:
+        ref = np.cumprod(inn.fix_invalid(ninp.a, fill_value=1))
+        nanval = inn.nanval(ninp.a)
+        for i, val in enumerate(ninp.a):
+            if inn.isnan(val):
+                ref[i] = nanval
+            else:
+                break
+    if issubclass(ninp.a.dtype.type, np.float32):
+        rtol = 1e-4
+    else:
+        rtol = 1e-7
+    np.testing.assert_allclose(inn.nancumprod(ninp.a), ref, rtol=rtol)
+
+
 def test_nanprod(inn, ninp):
     if ninp.dtype == np.float32:
         ref_dtype = np.float64
@@ -199,6 +235,15 @@ def test_nanmean(inn, ninp):
         warnings.filterwarnings(ninp.warnings, module="numpy")
         ref = np.mean(ninp.a[~inn.isnan(ninp.a)])
         np.testing.assert_equal(inn.nanmean(ninp.a), ref)
+
+
+def test_nanmedian(inn, ninp):
+    valid = ~inn.isnan(ninp.a)
+    if ninp.nanstate == "allnans":
+        ref = np.nan
+    else:
+        ref = np.median(ninp.a[valid])
+    np.testing.assert_allclose(inn.nanmedian(ninp.a), ref, rtol=1e-6)
 
 
 @pytest.mark.parametrize("ddof", [0, 1])

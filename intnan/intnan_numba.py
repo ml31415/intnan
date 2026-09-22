@@ -95,6 +95,36 @@ def nanmin(x: npt.NDArray, nan: Any) -> Any:
 
 
 @nancalc
+def nanargmax(x: npt.NDArray, nan: Any) -> Any:
+    idx = -1
+    cmp_val = nan
+    for i, x_ in enumerate(x.flat):
+        if isnan_vec(x_, nan):
+            continue
+        if isnan_vec(cmp_val, nan) or x_ > cmp_val:
+            cmp_val = x_
+            idx = i
+    if idx == -1:
+        raise ValueError("All-NaN slice encountered")
+    return idx
+
+
+@nancalc
+def nanargmin(x: npt.NDArray, nan: Any) -> Any:
+    idx = -1
+    cmp_val = nan
+    for i, x_ in enumerate(x.flat):
+        if isnan_vec(x_, nan):
+            continue
+        if isnan_vec(cmp_val, nan) or x_ < cmp_val:
+            cmp_val = x_
+            idx = i
+    if idx == -1:
+        raise ValueError("All-NaN slice encountered")
+    return idx
+
+
+@nancalc
 def nanmaximum(x: npt.NDArray, y: npt.NDArray, nan: Any) -> npt.NDArray:
     if len(x) != len(y):
         raise ValueError("input arrays must be of equal length")
@@ -160,6 +190,31 @@ def nancumsum(x: npt.NDArray, nan: Any) -> npt.NDArray:
     return ret
 
 
+def _nancumprod(x: npt.NDArray, nan: Any) -> npt.NDArray:
+    ret = np.full_like(x, nan)
+    val = nan
+    for i, x_ in enumerate(x.flat):
+        if not isnan_vec(x_, nan):
+            if isnan_vec(val, nan):
+                val = x_
+            else:
+                val = val * x_
+        if not isnan_vec(val, nan):
+            ret[i] = val
+    return ret
+
+
+_jnancumprod = nb.njit(_nancumprod, cache=True)
+
+
+def nancumprod(x: npt.NDArray) -> npt.NDArray:
+    nv = nanval(x)
+    if issubclass(x.dtype.type, np.integer) and x.dtype.itemsize < 8:
+        # numpy accumulates lower precision integers in the platform integer
+        return _jnancumprod(x.astype(np.int64), nv)
+    return _jnancumprod(x, nv)
+
+
 @nancalc
 def nanmean(x: npt.NDArray, nan: Any) -> Any:
     ret = 0.0
@@ -192,6 +247,26 @@ def _nanvar(x: npt.NDArray, nan: Any, ddof: int = 0) -> Any:
 
 _jnanvar = nb.njit(_nanvar, cache=True)
 nanvar = nancalc(_nanvar)
+
+
+@nancalc
+def nanmedian(x: npt.NDArray, nan: Any) -> Any:
+    cnt = 0
+    for x_ in x.flat:
+        if not isnan_vec(x_, nan):
+            cnt += 1
+    if cnt == 0:
+        return np.nan
+    tmp = np.empty(cnt, dtype=x.dtype)
+    i = 0
+    for x_ in x.flat:
+        if not isnan_vec(x_, nan):
+            tmp[i] = x_
+            i += 1
+    tmp.sort()
+    if cnt % 2 == 1:
+        return tmp[cnt // 2]
+    return (tmp[cnt // 2 - 1] + tmp[cnt // 2]) / 2
 
 
 @nancalc

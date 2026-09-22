@@ -74,9 +74,9 @@ Missing value handling:
 
 Reductions:
 
-- `nanmax(x)`, `nanmin(x)`
-- `nansum(x)`, `nanprod(x)`, `nancumsum(x)`
-- `nanmean(x)`, `nanvar(x, ddof=0)`, `nanstd(x, ddof=0)`
+- `nanmax(x)`, `nanmin(x)` and their index counterparts `nanargmax(x)`, `nanargmin(x)`
+- `nansum(x)`, `nanprod(x)`, `nancumsum(x)`, `nancumprod(x)`
+- `nanmean(x)`, `nanmedian(x)`, `nanvar(x, ddof=0)`, `nanstd(x, ddof=0)`
 
 Element-wise binary operations:
 

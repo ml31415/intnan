@@ -25,13 +25,17 @@ __all__ = [
     "anynan",
     "nanmin",
     "nanmax",
+    "nanargmax",
+    "nanargmin",
     "nanmaximum",
     "nanminimum",
     "nanmean",
+    "nanmedian",
     "nanstd",
     "nanvar",
     "nansum",
     "nancumsum",
+    "nancumprod",
     "nanprod",
     "nanequal",
     "nanclose",
@@ -179,6 +183,14 @@ def nanmin(x: npt.NDArray) -> Any:
                 raise
 
 
+def nanargmax(x: npt.NDArray) -> Any:
+    return np.nanargmax(asfloat(x))
+
+
+def nanargmin(x: npt.NDArray) -> Any:
+    return np.nanargmin(asfloat(x))
+
+
 def nanmaximum(x: npt.NDArray, y: npt.NDArray) -> npt.NDArray:
     """Does the same as numpy.maximum (element-wise maximum operation of two arrays) but ignores NaNs"""
     z = np.maximum(x, y)
@@ -231,6 +243,21 @@ def nancumsum(x: npt.NDArray) -> npt.NDArray:
     return result
 
 
+def nancumprod(x: npt.NDArray) -> npt.NDArray:
+    nv = nanval(x)
+    result = np.cumprod(fix_invalid(x, fill_value=1))
+
+    if anynan(x):
+        # cumprod is undefined before the first valid number appears, so we need to replace
+        # the nans starting from the beginning of the array
+        good_idx = np.where(~isnan(x))[0]
+        if len(good_idx) > 0:
+            result[: good_idx[0]] = nv
+        else:
+            result[:] = nv
+    return result
+
+
 def nanmean(x: npt.NDArray) -> Any:
     nv = nanval(x)
     if nv is np.nan:
@@ -238,6 +265,15 @@ def nanmean(x: npt.NDArray) -> Any:
     else:
         with np.errstate(invalid="ignore"):
             return np.mean(x[x != nv])
+
+
+def nanmedian(x: npt.NDArray) -> Any:
+    nv = nanval(x)
+    if nv is np.nan:
+        return np.nanmedian(x)
+    else:
+        with np.errstate(invalid="ignore"):
+            return np.median(x[x != nv])
 
 
 def nanvar(x: npt.NDArray, ddof: int = 0) -> Any:
