@@ -8,7 +8,10 @@ Large negative values are used, so that especially python indexing
 (from the end) is unlikely to work.
 """
 
+from typing import Any, TypeAlias, cast
+
 import numpy as np
+import numpy.typing as npt
 
 __all__ = [
     "NANVALS",
@@ -34,9 +37,11 @@ __all__ = [
     "nanclose",
 ]
 
+NanValue: TypeAlias = float | int | str | bytes | None
+
 INTNAN32 = np.iinfo("int32").min  # -2147483648
 INTNAN64 = np.iinfo("int64").min  # -9223372036854775808
-NANVALS = dict(
+NANVALS: dict[str, NanValue] = dict(
     d=np.nan,
     f=np.nan,
     e=np.nan,
@@ -55,31 +60,32 @@ NANVALS = dict(
 )
 
 
-def nanval(x, default=0):
+def nanval(x: npt.NDArray | npt.DTypeLike, default: NanValue = 0) -> NanValue:
     """Return the corresponding NAN value for a column or type"""
     dtype = x.dtype if isinstance(x, np.ndarray) else np.dtype(x)
     return NANVALS.get(dtype.char, default)
 
 
-def isnan(x):
+def isnan(x: npt.NDArray | np.generic | float | int | complex | str | bytes | None) -> bool | npt.NDArray[np.bool_]:
     if isinstance(x, np.ndarray):
         nv = nanval(x)
         if nv is np.nan:
             return np.isnan(x)
         elif nv is None:
-            return np.array([val is None for val in x])
+            return np.array([val is None for val in x], dtype=np.bool_)
         else:
             return x == nv
     elif x in {np.nan, None, b"", "", INTNAN32, INTNAN64}:
         return True
     else:
         try:
-            return np.isnan(x)
+            return bool(np.isnan(x))
         except TypeError:
+            # Non-numeric values are never NaN
             return False
 
 
-def fix_invalid(x, copy=True, fill_value=0):
+def fix_invalid(x: npt.NDArray, copy: bool = True, fill_value: Any = 0) -> npt.NDArray:
     nv = nanval(x)
     if nv is np.nan:
         if copy:
@@ -104,7 +110,7 @@ def fix_invalid(x, copy=True, fill_value=0):
             return x
 
 
-def asfloat(x):
+def asfloat(x: npt.NDArray) -> npt.NDArray[np.floating]:
     if issubclass(x.dtype.type, np.floating):
         return x.copy()
     elif issubclass(x.dtype.type, np.bool_):
@@ -112,36 +118,36 @@ def asfloat(x):
     return fix_invalid(x, fill_value=np.nan)
 
 
-def asint(x):
+def asint(x: npt.NDArray) -> npt.NDArray[np.integer]:
     if issubclass(x.dtype.type, np.integer):
         return x.copy()
     elif issubclass(x.dtype.type, np.bool_):
         return np.array(x, dtype=int)
-    nv = nanval(int)
+    nv = cast(int, nanval(int))
     return np.nan_to_num(x, nan=nv, posinf=nv, neginf=nv).astype(int)
 
 
-def anynan(x):
+def anynan(x: npt.NDArray) -> bool:
     nv = nanval(x)
     if nv is np.nan:
-        return np.any(np.isnan(x))
+        return bool(np.any(np.isnan(x)))
     elif nv is None:
         return any(val is None for val in x.flat)
     else:
-        return nv in x
+        return bool(nv in x)
 
 
-def allnan(x):
+def allnan(x: npt.NDArray) -> bool:
     nv = nanval(x)
     if nv is np.nan:
-        return np.all(np.isnan(x))
+        return bool(np.all(np.isnan(x)))
     elif nv is None:
         return all(val is None for val in x.flat)
     else:
-        return np.all(x == nv)
+        return bool(np.all(x == nv))
 
 
-def nanmax(x):
+def nanmax(x: npt.NDArray) -> Any:
     nv = nanval(x)
     if nv is np.nan:
         return np.nanmax(x)
@@ -155,7 +161,7 @@ def nanmax(x):
                 raise
 
 
-def nanmin(x):
+def nanmin(x: npt.NDArray) -> Any:
     nv = nanval(x)
     if nv is np.nan:
         return np.nanmin(x)
@@ -169,7 +175,7 @@ def nanmin(x):
                 raise
 
 
-def nanmaximum(x, y):
+def nanmaximum(x: npt.NDArray, y: npt.NDArray) -> npt.NDArray:
     """Does the same as numpy.maximum (element-wise maximum operation of two arrays) but ignores NaNs"""
     z = np.maximum(x, y)
     badx = isnan(x)
@@ -179,7 +185,7 @@ def nanmaximum(x, y):
     return z
 
 
-def nanminimum(x, y):
+def nanminimum(x: npt.NDArray, y: npt.NDArray) -> npt.NDArray:
     """Does the same as numpy.minimum (element-wise minimum operation of two arrays) but ignores NaNs"""
     z = np.minimum(x, y)
     badx = isnan(x)
@@ -189,7 +195,7 @@ def nanminimum(x, y):
     return z
 
 
-def nansum(x):
+def nansum(x: npt.NDArray) -> Any:
     nv = nanval(x)
     if nv is np.nan:
         return np.nansum(x)
@@ -197,7 +203,7 @@ def nansum(x):
         return np.sum(x[x != nv])
 
 
-def nanprod(x):
+def nanprod(x: npt.NDArray) -> Any:
     nv = nanval(x)
     if nv is np.nan:
         return np.nanprod(x, dtype=np.float64)
@@ -205,7 +211,7 @@ def nanprod(x):
         return np.prod(x[x != nv])
 
 
-def nancumsum(x):
+def nancumsum(x: npt.NDArray) -> npt.NDArray:
     nv = nanval(x)
     result = np.cumsum(fix_invalid(x))
 
@@ -221,7 +227,7 @@ def nancumsum(x):
     return result
 
 
-def nanmean(x):
+def nanmean(x: npt.NDArray) -> Any:
     nv = nanval(x)
     if nv is np.nan:
         return np.nanmean(x)
@@ -230,7 +236,7 @@ def nanmean(x):
             return np.mean(x[x != nv])
 
 
-def nanvar(x, ddof=0):
+def nanvar(x: npt.NDArray, ddof: int = 0) -> Any:
     nv = nanval(x)
     if nv is np.nan:
         return np.nanvar(x, ddof=ddof)
@@ -239,7 +245,7 @@ def nanvar(x, ddof=0):
             return np.var(x[x != nv], ddof=ddof)
 
 
-def nanstd(x, ddof=0):
+def nanstd(x: npt.NDArray, ddof: int = 0) -> Any:
     nv = nanval(x)
     if nv is np.nan:
         return np.nanstd(x, ddof=ddof)
@@ -248,7 +254,7 @@ def nanstd(x, ddof=0):
             return np.std(x[x != nv], ddof=ddof)
 
 
-def nanequal(x, y):
+def nanequal(x: npt.NDArray, y: npt.NDArray) -> npt.NDArray[np.bool_]:
     """Treat NaN as an ordinary value when comparing for equality."""
     if x.dtype != y.dtype:
         raise TypeError(f"nanequal requires same data type: {x.dtype} != {y.dtype}")
@@ -258,7 +264,7 @@ def nanequal(x, y):
         return x == y
 
 
-def nanclose(x, y, delta=np.finfo(float).eps):
+def nanclose(x: npt.NDArray, y: npt.NDArray, delta: float = np.finfo(float).eps) -> npt.NDArray[np.bool_]:
     if x.dtype != y.dtype:
         raise TypeError(f"nanclose requires same data type: {x.dtype} != {y.dtype}")
     if issubclass(x.dtype.type, np.integer):

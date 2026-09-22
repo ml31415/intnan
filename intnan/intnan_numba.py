@@ -1,9 +1,12 @@
 """A bunch of small functions that replace and improve former usage of numexpr and bottleneck"""
 
+from collections.abc import Callable
 from functools import wraps
+from typing import Any
 
 import numba as nb
 import numpy as np
+import numpy.typing as npt
 
 from .intnan_np import (
     INTNAN32,
@@ -18,11 +21,11 @@ from .intnan_np import (
 )
 
 
-def nancalc(func):
+def nancalc(func: Callable[..., Any]) -> Callable[..., Any]:
     jfunc = nb.njit(func, cache=True)
 
     @wraps(func)
-    def wrapped(*args, **kwargs):
+    def wrapped(*args: Any, **kwargs: Any) -> Any:
         nv = nanval(args[0])
         args = args + (nv,)
         return jfunc(*args, **kwargs)
@@ -31,12 +34,12 @@ def nancalc(func):
 
 
 @nb.njit(cache=True)
-def isnan_vec(x, nan):
+def isnan_vec(x: npt.NDArray, nan: Any) -> npt.NDArray[np.bool_]:
     return (x == nan) | (x != x)
 
 
 @nancalc
-def fix_invalid(x, nan, copy=True, fill_value=0):
+def fix_invalid(x: npt.NDArray, nan: Any, copy: bool = True, fill_value: Any = 0) -> npt.NDArray:
     if copy:
         ret = np.empty_like(x)
     else:
@@ -50,7 +53,7 @@ def fix_invalid(x, nan, copy=True, fill_value=0):
 
 
 @nancalc
-def allnan(x, nan):
+def allnan(x: npt.NDArray, nan: Any) -> bool:
     for x_ in x.flat:
         if not isnan_vec(x_, nan):
             return False
@@ -58,7 +61,7 @@ def allnan(x, nan):
 
 
 @nancalc
-def anynan(x, nan):
+def anynan(x: npt.NDArray, nan: Any) -> bool:
     for x_ in x.flat:
         if isnan_vec(x_, nan):
             return True
@@ -66,7 +69,7 @@ def anynan(x, nan):
 
 
 @nancalc
-def nanmax(x, nan):
+def nanmax(x: npt.NDArray, nan: Any) -> Any:
     cmp_val = nan
     for x_ in x.flat:
         if isnan_vec(x_, nan):
@@ -79,7 +82,7 @@ def nanmax(x, nan):
 
 
 @nancalc
-def nanmin(x, nan):
+def nanmin(x: npt.NDArray, nan: Any) -> Any:
     cmp_val = nan
     for x_ in x.flat:
         if isnan_vec(x_, nan):
@@ -92,7 +95,7 @@ def nanmin(x, nan):
 
 
 @nancalc
-def nanmaximum(x, y, nan):
+def nanmaximum(x: npt.NDArray, y: npt.NDArray, nan: Any) -> npt.NDArray:
     if len(x) != len(y):
         raise ValueError("input arrays must be of equal length")
     ret = np.full_like(x, nan)
@@ -109,7 +112,7 @@ def nanmaximum(x, y, nan):
 
 
 @nancalc
-def nanminimum(x, y, nan):
+def nanminimum(x: npt.NDArray, y: npt.NDArray, nan: Any) -> npt.NDArray:
     if len(x) != len(y):
         raise ValueError("input arrays must be of equal length")
     ret = np.full_like(x, nan)
@@ -126,7 +129,7 @@ def nanminimum(x, y, nan):
 
 
 @nancalc
-def nansum(x, nan):
+def nansum(x: npt.NDArray, nan: Any) -> Any:
     ret = 0
     for x_ in x.flat:
         if not isnan_vec(x_, nan):
@@ -135,7 +138,7 @@ def nansum(x, nan):
 
 
 @nancalc
-def nanprod(x, nan):
+def nanprod(x: npt.NDArray, nan: Any) -> Any:
     ret = 1
     for x_ in x.flat:
         if not isnan_vec(x_, nan):
@@ -144,7 +147,7 @@ def nanprod(x, nan):
 
 
 @nancalc
-def nancumsum(x, nan):
+def nancumsum(x: npt.NDArray, nan: Any) -> npt.NDArray:
     ret = np.full_like(x, nan)
     val = nan
     for i, x_ in enumerate(x.flat):
@@ -158,7 +161,7 @@ def nancumsum(x, nan):
 
 
 @nancalc
-def nanmean(x, nan):
+def nanmean(x: npt.NDArray, nan: Any) -> Any:
     ret = 0.0
     cnt = 0
     for x_ in x.flat:
@@ -168,7 +171,7 @@ def nanmean(x, nan):
     return np.divide(ret, cnt)
 
 
-def _nanvar(x, nan, ddof=0):
+def _nanvar(x: npt.NDArray, nan: Any, ddof: int = 0) -> Any:
     ret = 0.0
     cnt = 0
     # Inline that loop from nanmean, so that we can reuse cnt
@@ -192,5 +195,5 @@ nanvar = nancalc(_nanvar)
 
 
 @nancalc
-def nanstd(x, nan, ddof=0):
+def nanstd(x: npt.NDArray, nan: Any, ddof: int = 0) -> Any:
     return np.sqrt(_jnanvar(x, nan, ddof=ddof))

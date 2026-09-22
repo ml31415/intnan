@@ -35,6 +35,7 @@ dev = [
     "pytest",
     "numba",
     "ruff",
+    "mypy",
 ]
 
 [project.urls]
@@ -52,6 +53,25 @@ select = ["E", "F", "W", "I"]
 # Re-exports via star import from the package namespace
 "intnan/__init__.py" = ["F403"]
 "intnan/intnan_numba.py" = ["F401"]
+
+[tool.mypy]
+python_version = "3.10"
+files = ["intnan"]
+
+[[tool.mypy.overrides]]
+module = "numba.*"
+# Numba's bundled type hints are incomplete (e.g. prange not marked as iterable)
+follow_imports = "skip"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "setuptools_scm.*"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "intnan.tests.*"
+# Dynamic import fallbacks at the top of the test suite
+disable_error_code = ["no-redef", "assignment"]
 
 [tool.setuptools.packages.find]
 include = ["intnan*"]
