@@ -118,6 +118,7 @@ The project uses [uv](https://docs.astral.sh/uv/) for dependency management:
 git clone https://github.com/ml31415/intnan
 cd intnan
 uv sync          # create virtualenv and install all dependencies
+uv run pre-commit install  # optional: run lint, format and type checks on every commit
 uv run pytest    # run the test suite
 uv run ruff check . && uv run ruff format --check .  # lint and format check
 uv run mypy      # type check

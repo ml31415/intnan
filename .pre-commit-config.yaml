@@ -12,3 +12,13 @@ repos:
       - id: ruff
         args: [--fix]
       - id: ruff-format
+  - repo: local
+    hooks:
+      - id: mypy
+        name: mypy
+        # Run via uv to use the locked toolchain (mypy + numpy stubs)
+        entry: uv run mypy
+        language: system
+        types: [python]
+        pass_filenames: false
+        files: ^(intnan/|pyproject\.toml)
