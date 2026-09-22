@@ -31,14 +31,38 @@ def inn(request):
 def test_nanval(inn):
     assert inn.nanval(np.ones(10, dtype=np.int64)) == -(2**63)
     assert inn.nanval(np.ones(10, dtype=np.int32)) == -(2**31)
+    assert inn.nanval(np.dtype("longlong")) == -(2**63)
+    assert inn.nanval(np.dtype("uint32")) == 0
     assert np.isnan(inn.nanval(np.ones(10, dtype=np.float64)))
     assert np.isnan(inn.nanval(np.ones(10, dtype=np.float32)))
+
+
+def test_nanval_dtypes(inn):
+    # kind based, independent of the platform dependent size of the C type 'long'
+    for dt in (np.int8, np.int16, np.int32, np.int64, np.longlong):
+        assert inn.nanval(np.dtype(dt)) == np.iinfo(dt).min
+    for dt in (np.uint8, np.uint16, np.uint32, np.uint64):
+        assert inn.nanval(np.dtype(dt)) == 0
+    for dt in (np.float16, np.float32, np.float64, np.longdouble):
+        assert np.isnan(inn.nanval(np.dtype(dt)))
+    assert inn.nanval(np.dtype("U5")) == ""
+    assert inn.nanval(np.dtype("S5")) == b""
+    assert inn.nanval(np.dtype("O")) is None
+    assert inn.nanval(np.dtype(bool), -1) == -1
 
 
 def test_asfloat(inn):
     np.testing.assert_array_equal(inn.asfloat(np.array([True, False])), np.array([1.0, 0.0]))
     np.testing.assert_array_equal(inn.asfloat(np.array([1.0, 0.0, np.nan])), np.array([1.0, 0.0, np.nan]))
     np.testing.assert_array_equal(inn.asfloat(np.array([1, 0, intnan_np.INTNAN64])), np.array([1.0, 0.0, np.nan]))
+
+
+def test_asint(inn):
+    res = inn.asint(np.array([1.0, np.nan, 3.0]))
+    assert issubclass(res.dtype.type, np.integer)
+    np.testing.assert_array_equal(res, np.array([1, intnan_np.INTNAN64, 3], dtype=np.int64))
+    np.testing.assert_array_equal(inn.asint(np.array([True, False])), np.array([1, 0]))
+    np.testing.assert_array_equal(inn.asint(np.array([1, intnan_np.INTNAN64])), np.array([1, intnan_np.INTNAN64]))
 
 
 ninp_list = itertools.product(
@@ -195,6 +219,14 @@ def test_nancumsum(inn, ninp):
     else:
         rtol = 1e-7
     np.testing.assert_allclose(inn.nancumsum(ninp.a), ref, rtol=rtol)
+
+
+def test_nancumsum_int_promotion(inn):
+    # Sums exceeding the int32 range must be accumulated in the platform integer, like numpy does
+    a = np.array([2**30, 2**30, 2**30], dtype=np.int32)
+    a[2] = intnan_np.nanval(a)
+    ref = np.cumsum(inn.fix_invalid(a))
+    np.testing.assert_array_equal(inn.nancumsum(a), ref)
 
 
 def test_nancumprod(inn, ninp):

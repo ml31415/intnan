@@ -21,6 +21,7 @@ __all__ = [
     "isnan",
     "fix_invalid",
     "asfloat",
+    "asint",
     "allnan",
     "anynan",
     "nanmin",
@@ -45,15 +46,22 @@ NanValue: TypeAlias = float | int | str | bytes | None
 
 INTNAN32 = np.iinfo("int32").min  # -2147483648
 INTNAN64 = np.iinfo("int64").min  # -9223372036854775808
+
+# NAN values keyed by dtype char. Note: the size of the C types behind the
+# chars 'l' and 'L' (long) is platform dependent (64 bit on Linux/macOS,
+# 32 bit on Windows), so this mapping is only reliable on Linux/macOS.
+# Use nanval(), which works on dtype kinds and is platform independent.
 NANVALS: dict[str, NanValue] = dict(
     d=np.nan,
     f=np.nan,
     e=np.nan,
+    g=np.nan,
     S=b"",
     U="",
     l=INTNAN64,
-    q=INTNAN32,
+    q=INTNAN64,
     i=INTNAN32,
+    I=0,
     b=-1,
     h=-1,
     B=0,
@@ -67,7 +75,19 @@ NANVALS: dict[str, NanValue] = dict(
 def nanval(x: npt.NDArray | npt.DTypeLike, default: NanValue = 0) -> NanValue:
     """Return the corresponding NAN value for a column or type"""
     dtype = x.dtype if isinstance(x, np.ndarray) else np.dtype(x)
-    return NANVALS.get(dtype.char, default)
+    if dtype.kind == "f":
+        return np.nan
+    elif dtype.kind == "i":
+        return np.iinfo(dtype).min
+    elif dtype.kind == "u":
+        return 0
+    elif dtype.kind == "U":
+        return ""
+    elif dtype.kind == "S":
+        return b""
+    elif dtype.kind == "O":
+        return None
+    return default
 
 
 @overload
