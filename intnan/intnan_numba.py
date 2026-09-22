@@ -19,7 +19,7 @@ from .intnan_np import (
 
 
 def nancalc(func):
-    jfunc = nb.njit(func)
+    jfunc = nb.njit(func, cache=True)
 
     @wraps(func)
     def wrapped(*args, **kwargs):
@@ -30,7 +30,7 @@ def nancalc(func):
     return wrapped
 
 
-@nb.njit
+@nb.njit(cache=True)
 def isnan_vec(x, nan):
     return (x == nan) | (x != x)
 
@@ -196,7 +196,7 @@ def _nanvar(x, nan, ddof=0):
     return ex_mean / (cnt - ddof)
 
 
-_jnanvar = nb.njit(_nanvar)
+_jnanvar = nb.njit(_nanvar, cache=True)
 nanvar = nancalc(_nanvar)
 
 
