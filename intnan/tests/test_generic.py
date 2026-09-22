@@ -246,6 +246,26 @@ def test_nanmedian(inn, ninp):
     np.testing.assert_allclose(inn.nanmedian(ninp.a), ref, rtol=1e-6)
 
 
+def test_nanmedian_valid_counts(inn):
+    # odd number of valid values picks the middle element
+    a = np.arange(6, dtype=np.int64)
+    a[5] = intnan_np.nanval(a)
+    np.testing.assert_equal(inn.nanmedian(a), 2)
+    # even number of valid values averages the two middle elements
+    a = np.arange(7, dtype=np.int64)
+    a[6] = intnan_np.nanval(a)
+    np.testing.assert_equal(inn.nanmedian(a), 2.5)
+
+
+def test_nanarg_duplicates(inn):
+    # argmax/argmin return the first occurrence of the extreme value
+    a = np.array([1, 5, 3, 5, 2], dtype=np.int64)
+    assert inn.nanargmax(a) == 1
+    assert inn.nanargmin(a) == 0
+    a[0] = intnan_np.nanval(a)
+    assert inn.nanargmin(a) == 4
+
+
 @pytest.mark.parametrize("ddof", [0, 1])
 def test_nanstd(inn, ninp, ddof, tolerance=1e-6):
     with warnings.catch_warnings():
