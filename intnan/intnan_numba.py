@@ -1,4 +1,7 @@
-"""A bunch of small functions that replace and improve former usage of numexpr and bottleneck"""
+"""Numba accelerated implementations of the intnan functions.
+
+Automatically selected on import when numba is available.
+"""
 
 from collections.abc import Callable
 from functools import wraps
@@ -14,6 +17,7 @@ from .intnan_np import (
     NANVALS,
     __all__,
     asfloat,
+    asint,
     isnan,
     nanclose,
     nanequal,
@@ -176,18 +180,34 @@ def nanprod(x: npt.NDArray, nan: Any) -> Any:
     return ret
 
 
-@nancalc
-def nancumsum(x: npt.NDArray, nan: Any) -> npt.NDArray:
+def _nancumsum(x: npt.NDArray, nan: Any) -> npt.NDArray:
     ret = np.full_like(x, nan)
     val = nan
+    started = False
     for i, x_ in enumerate(x.flat):
         if not isnan_vec(x_, nan):
-            if isnan_vec(val, nan):
-                val = 0
-            val += x_
-        if not isnan_vec(val, nan):
+            if started:
+                val = val + x_
+            else:
+                val = x_
+                started = True
+        if started:
             ret[i] = val
     return ret
+
+
+_jnancumsum = nb.njit(_nancumsum, cache=True)
+
+
+def _platform_int(x: npt.NDArray) -> npt.NDArray:
+    """Upcast integer arrays below platform integer width, like numpy accumulations do"""
+    if issubclass(x.dtype.type, np.integer) and x.dtype.itemsize < 8:
+        return x.astype(np.int64)
+    return x
+
+
+def nancumsum(x: npt.NDArray) -> npt.NDArray:
+    return _jnancumsum(_platform_int(x), nanval(x))
 
 
 def _nancumprod(x: npt.NDArray, nan: Any) -> npt.NDArray:
@@ -209,10 +229,7 @@ _jnancumprod = nb.njit(_nancumprod, cache=True)
 
 def nancumprod(x: npt.NDArray) -> npt.NDArray:
     nv = nanval(x)
-    if issubclass(x.dtype.type, np.integer) and x.dtype.itemsize < 8:
-        # numpy accumulates lower precision integers in the platform integer
-        return _jnancumprod(x.astype(np.int64), nv)
-    return _jnancumprod(x, nv)
+    return _jnancumprod(_platform_int(x), nv)
 
 
 @nancalc
