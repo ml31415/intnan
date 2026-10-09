@@ -62,7 +62,10 @@ intnan.fix_invalid(a)  # array([1, 0, 3], dtype=int32)
 
 The following functions are provided by `intnan`. Where applicable, their
 semantics mirror the corresponding `numpy` function, with missing values
-ignored instead of propagated.
+ignored instead of propagated. All reductions accept the usual `axis` and
+`keepdims` arguments like their `numpy` counterparts. All-missing slices
+yield the missing value for integer dtypes and `NaN` for floating dtypes;
+the `arg*` functions raise on all-missing slices like `numpy` does.
 
 Missing value handling:
 

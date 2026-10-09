@@ -204,11 +204,11 @@ def test_nansum(inn, ninp):
 
 
 def test_nancumsum(inn, ninp):
+    ref = np.cumsum(inn.fix_invalid(ninp.a))
+    nanval = inn.nanval(ref)
     if ninp.nanstate == "allnans":
-        ref = np.full_like(ninp.a, inn.nanval(ninp.a))
+        ref[:] = nanval
     else:
-        ref = np.cumsum(inn.fix_invalid(ninp.a))
-        nanval = inn.nanval(ninp.a)
         for i, val in enumerate(ninp.a):
             if inn.isnan(val):
                 ref[i] = nanval
@@ -230,11 +230,11 @@ def test_nancumsum_int_promotion(inn):
 
 
 def test_nancumprod(inn, ninp):
+    ref = np.cumprod(inn.fix_invalid(ninp.a, fill_value=1))
+    nanval = inn.nanval(ref)
     if ninp.nanstate == "allnans":
-        ref = np.full_like(ninp.a, inn.nanval(ninp.a))
+        ref[:] = nanval
     else:
-        ref = np.cumprod(inn.fix_invalid(ninp.a, fill_value=1))
-        nanval = inn.nanval(ninp.a)
         for i, val in enumerate(ninp.a):
             if inn.isnan(val):
                 ref[i] = nanval
@@ -346,3 +346,169 @@ def test_nanclose(inn, ninp, tolerance=1e-9):
     with np.errstate(invalid="ignore"):
         clone = clone.astype(np.int16)
     pytest.raises(TypeError, inn.nanclose, ninp.a, clone, tolerance)
+
+
+ninp2_list = itertools.product(
+    ["nonans", "partial", "missingline"],
+    [np.int64, np.int32, np.float64, np.float32],
+)
+
+
+@pytest.fixture(params=ninp2_list, ids=lambda x: "-".join((x[0], x[1].__name__)))
+def nimat(request):
+    nanstate, dtype = request.param
+    a = np.arange(24, dtype=dtype).reshape(4, 6)
+    mask = np.zeros_like(a, dtype=bool)
+    if nanstate != "nonans":
+        mask[1, ::2] = True
+        mask[::2, 4] = True
+    if nanstate == "missingline":
+        mask[:, 5] = True  # one all-missing column
+        mask[3, :] = True  # one all-missing row
+    a[mask] = intnan_np.nanval(a)
+    return SimpleNamespace(a=a, mask=mask, nanstate=nanstate, dtype=dtype)
+
+
+def _accum_reference(inn, a, axis, prod):
+    """Independent per-slice reference: accumulate valid values; positions before the first valid value stay missing."""
+    nv = inn.nanval(a)
+    mask = np.asarray(inn.isnan(a))
+    vals = inn.fix_invalid(a, fill_value=1 if prod else 0)
+    if axis is None:
+        vals = vals.ravel()
+        mask = mask.ravel()
+        axis_eff = 0
+    else:
+        axis_eff = axis % vals.ndim
+        vals = np.moveaxis(vals, axis_eff, 0)
+        mask = np.moveaxis(mask, axis_eff, 0)
+    ref = np.empty_like(vals)
+    for idx in np.ndindex(vals.shape[1:]):
+        acc = None
+        for i in range(vals.shape[0]):
+            if not mask[(i,) + idx]:
+                acc = vals[(i,) + idx] if acc is None else (acc * vals[(i,) + idx] if prod else acc + vals[(i,) + idx])
+            ref[(i,) + idx] = nv if acc is None else acc
+    if axis is None:
+        return ref
+    return np.moveaxis(ref, 0, axis_eff)
+
+
+def assert_like_ref(inn, res, ref, rtol=1e-6):
+    """Compare an intnan result against a reference; missing positions must match."""
+    res = np.asarray(res)
+    ref = np.asarray(ref)
+    res_missing = np.asarray(inn.isnan(res))
+    ref_missing = np.asarray(inn.isnan(ref))
+    np.testing.assert_array_equal(res_missing, ref_missing)
+    np.testing.assert_allclose(res[~res_missing], ref[~ref_missing], rtol=rtol)
+
+
+@pytest.mark.parametrize("axis", [0, 1, -1, None])
+def test_nanmin_axis(inn, nimat, axis):
+    assert_like_ref(inn, inn.nanmin(nimat.a, axis=axis), np.nanmin(inn.asfloat(nimat.a), axis=axis))
+
+
+@pytest.mark.parametrize("axis", [0, 1, -1, None])
+def test_nanmax_axis(inn, nimat, axis):
+    assert_like_ref(inn, inn.nanmax(nimat.a, axis=axis), np.nanmax(inn.asfloat(nimat.a), axis=axis))
+
+
+def test_nanmin_keepdims(inn, nimat):
+    res = inn.nanmin(nimat.a, axis=1, keepdims=True)
+    assert res.shape == (nimat.a.shape[0], 1)
+    assert_like_ref(inn, res, np.nanmin(inn.asfloat(nimat.a), axis=1, keepdims=True))
+
+
+@pytest.mark.parametrize("axis", [0, 1, -1, None])
+def test_nansum_axis(inn, nimat, axis):
+    assert_like_ref(inn, inn.nansum(nimat.a, axis=axis), np.nansum(inn.asfloat(nimat.a), axis=axis))
+
+
+@pytest.mark.parametrize("axis", [0, 1, -1, None])
+def test_nanprod_axis(inn, nimat, axis):
+    ref = np.nanprod(inn.asfloat(nimat.a), axis=axis, dtype=np.float64)
+    assert_like_ref(inn, inn.nanprod(nimat.a, axis=axis), ref)
+
+
+@pytest.mark.parametrize("axis", [0, 1, -1, None])
+def test_nanmean_axis(inn, nimat, axis):
+    assert_like_ref(inn, inn.nanmean(nimat.a, axis=axis), np.nanmean(inn.asfloat(nimat.a), axis=axis))
+
+
+@pytest.mark.parametrize("axis", [0, 1, -1, None])
+def test_nanmedian_axis(inn, nimat, axis):
+    assert_like_ref(inn, inn.nanmedian(nimat.a, axis=axis), np.nanmedian(inn.asfloat(nimat.a), axis=axis))
+
+
+@pytest.mark.parametrize("ddof", [0, 1])
+@pytest.mark.parametrize("axis", [0, 1, None])
+def test_nanstd_axis(inn, nimat, axis, ddof):
+    ref = np.nanstd(inn.asfloat(nimat.a), axis=axis, ddof=ddof)
+    assert_like_ref(inn, inn.nanstd(nimat.a, axis=axis, ddof=ddof), ref)
+
+
+@pytest.mark.parametrize("ddof", [0, 1])
+@pytest.mark.parametrize("axis", [0, 1, None])
+def test_nanvar_axis(inn, nimat, axis, ddof):
+    ref = np.nanvar(inn.asfloat(nimat.a), axis=axis, ddof=ddof)
+    assert_like_ref(inn, inn.nanvar(nimat.a, axis=axis, ddof=ddof), ref)
+
+
+@pytest.mark.parametrize("axis", [0, 1, -1])
+def test_nanargmax_axis(inn, nimat, axis):
+    if nimat.nanstate == "missingline":
+        # every reduction line hits the all-missing column or row
+        pytest.raises(ValueError, inn.nanargmax, nimat.a, axis=axis)
+        pytest.raises(ValueError, inn.nanargmin, nimat.a, axis=axis)
+    else:
+        ref = np.nanargmax(inn.asfloat(nimat.a), axis=axis)
+        np.testing.assert_array_equal(inn.nanargmax(nimat.a, axis=axis), ref)
+        ref = np.nanargmin(inn.asfloat(nimat.a), axis=axis)
+        np.testing.assert_array_equal(inn.nanargmin(nimat.a, axis=axis), ref)
+
+
+def test_nanargmax_int64_large_values(inn):
+    # beyond the float64 mantissa precision a float detour would pick the wrong index
+    a = np.array([2**53, 2**53 + 2, 2**53 + 1], dtype=np.int64)
+    assert inn.nanargmax(a) == 1
+    assert inn.nanargmin(a) == 0
+
+
+@pytest.mark.parametrize("axis", [0, 1, -1, None])
+def test_anynan_axis(inn, nimat, axis):
+    ref = np.any(inn.isnan(nimat.a), axis=axis)
+    np.testing.assert_array_equal(inn.anynan(nimat.a, axis=axis), ref)
+
+
+@pytest.mark.parametrize("axis", [0, 1, -1, None])
+def test_allnan_axis(inn, nimat, axis):
+    ref = np.all(inn.isnan(nimat.a), axis=axis)
+    np.testing.assert_array_equal(inn.allnan(nimat.a, axis=axis), ref)
+
+
+def test_nanflags_axis_keepdims(inn, nimat):
+    assert inn.anynan(nimat.a, axis=0, keepdims=True).shape == (1, nimat.a.shape[1])
+    assert inn.allnan(nimat.a, axis=0, keepdims=True).shape == (1, nimat.a.shape[1])
+
+
+@pytest.mark.parametrize("axis", [0, 1, -1, None])
+def test_nancumsum_axis(inn, nimat, axis):
+    assert_like_ref(inn, inn.nancumsum(nimat.a, axis=axis), _accum_reference(inn, nimat.a, axis, prod=False), rtol=1e-5)
+
+
+@pytest.mark.parametrize("axis", [0, 1, -1, None])
+def test_nancumprod_axis(inn, nimat, axis):
+    assert_like_ref(inn, inn.nancumprod(nimat.a, axis=axis), _accum_reference(inn, nimat.a, axis, prod=True), rtol=1e-5)
+
+
+def test_tuple_axis(inn, nimat):
+    assert_like_ref(inn, inn.nansum(nimat.a, axis=(0, 1)), np.nansum(inn.asfloat(nimat.a), axis=(0, 1)))
+    assert_like_ref(inn, inn.nanmin(nimat.a, axis=(0, 1)), np.nanmin(inn.asfloat(nimat.a), axis=(0, 1)))
+
+
+def test_axis_unsupported_dtype(inn):
+    a = np.array(["a", "", "b"])
+    pytest.raises(ValueError, inn.nanmin, a, axis=0)
+    a = np.array([1, None, 3], dtype=object)
+    pytest.raises(ValueError, inn.nansum, a, axis=0)

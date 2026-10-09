@@ -43,6 +43,10 @@ __all__ = [
 ]
 
 type NanValue = float | int | str | bytes | None
+type Axis = int | tuple[int, ...] | None
+
+# Dtype kinds for which reductions along axes are supported
+_NUMERIC_KINDS = "iuf"
 
 INTNAN32 = np.iinfo("int32").min  # -2147483648
 INTNAN64 = np.iinfo("int64").min  # -9223372036854775808
@@ -155,60 +159,137 @@ def asint(x: npt.NDArray) -> npt.NDArray[np.integer]:
     return np.nan_to_num(x, nan=nv, posinf=nv, neginf=nv).astype(int)
 
 
-def anynan(x: npt.NDArray) -> bool:
+def anynan(x: npt.NDArray, axis: Axis = None, keepdims: bool = False) -> Any:
+    """Test if any value is missing; with axis, test per slice."""
+    mask = isnan(x)
+    if axis is None and not keepdims:
+        return bool(np.any(mask))
+    return np.any(mask, axis=axis, keepdims=keepdims)  # type: ignore[call-overload]  # numpy-stubs: no union-axis + bool keepdims overload
+
+
+def allnan(x: npt.NDArray, axis: Axis = None, keepdims: bool = False) -> Any:
+    """Test if all values are missing; with axis, test per slice."""
+    mask = isnan(x)
+    if axis is None and not keepdims:
+        return bool(np.all(mask))
+    return np.all(mask, axis=axis, keepdims=keepdims)  # type: ignore[call-overload]  # numpy-stubs: no union-axis + bool keepdims overload
+
+
+def _extreme_value(x: npt.NDArray, high: bool) -> Any:
+    """Value that never wins a min/max reduction against any valid entry."""
+    if x.dtype.kind == "f":
+        return np.inf if high else -np.inf
+    ii = np.iinfo(x.dtype)
+    return ii.max if high else ii.min
+
+
+def _check_axis_support(x: npt.NDArray, axis: Axis) -> None:
+    if axis is not None and x.dtype.kind not in _NUMERIC_KINDS:
+        raise ValueError(f"axis is only supported for numeric dtypes, not for {x.dtype!r}")
+
+
+def _squeeze_reduced(ret: npt.NDArray, axis: Axis, keepdims: bool) -> Any:
+    """Undo the internal keepdims=True shape of a reduction."""
+    if keepdims:
+        return ret
+    if axis is None:
+        return ret[()]
+    return np.squeeze(ret, axis=axis)
+
+
+def _masked_mean(x: npt.NDArray, mask: npt.NDArray[np.bool_], axis: Axis) -> npt.NDArray:
+    """Mean over the valid values with reduced dimensions kept; all-missing slices yield NaN."""
+    valid = np.sum(~mask, axis=axis, keepdims=True)
+    total = np.sum(x, axis=axis, where=~mask, dtype=np.float64, keepdims=True)
+    return np.divide(total, valid, out=np.full_like(total, np.nan), where=valid > 0)
+
+
+def _leading_invalid(
+    x: npt.NDArray, first: npt.NDArray, has_valid: npt.NDArray[np.bool_], axis: int
+) -> npt.NDArray[np.bool_]:
+    """Boolean mask of the positions before the first valid value along axis."""
+    ax = axis if axis >= 0 else axis + x.ndim
+    grid_shape = [1] * x.ndim
+    grid_shape[ax] = x.shape[ax]
+    pos = np.arange(x.shape[ax], dtype=np.intp).reshape(grid_shape)
+    lead = pos < np.expand_dims(first, ax)
+    return lead | ~np.expand_dims(has_valid, ax)
+
+
+def nanmax(x: npt.NDArray, axis: Axis = None, keepdims: bool = False) -> Any:
+    """Maximum over the valid values; all-missing slices yield the missing value."""
     nv = nanval(x)
     if nv is np.nan:
-        return bool(np.any(np.isnan(x)))
-    elif nv is None:
-        return any(val is None for val in x.flat)
-    else:
-        return bool(nv in x)
-
-
-def allnan(x: npt.NDArray) -> bool:
-    nv = nanval(x)
-    if nv is np.nan:
-        return bool(np.all(np.isnan(x)))
-    elif nv is None:
-        return all(val is None for val in x.flat)
-    else:
-        return bool(np.all(x == nv))
-
-
-def nanmax(x: npt.NDArray) -> Any:
-    nv = nanval(x)
-    if nv is np.nan:
-        return np.nanmax(x)
-    else:
+        return np.nanmax(x, axis=axis, keepdims=keepdims)  # type: ignore[call-overload]  # numpy-stubs: no union-axis + bool keepdims overload
+    mask = isnan(x)
+    if axis is None and not keepdims:
         try:
-            return np.max(x[x != nv])
+            return np.max(x[~mask])
         except ValueError as e:
             if "zero-size" in str(e):
                 return nv
-            else:
-                raise
+            raise
+    _check_axis_support(x, axis)
+    filled = np.where(mask, _extreme_value(x, high=False), x)
+    ret = np.max(filled, axis=axis, keepdims=True)
+    valid = np.sum(~mask, axis=axis, keepdims=True)
+    ret = np.where(valid == 0, cast("float | int", nv), ret)
+    return _squeeze_reduced(ret, axis, keepdims)
 
 
-def nanmin(x: npt.NDArray) -> Any:
+def nanmin(x: npt.NDArray, axis: Axis = None, keepdims: bool = False) -> Any:
+    """Minimum over the valid values; all-missing slices yield the missing value."""
     nv = nanval(x)
     if nv is np.nan:
-        return np.nanmin(x)
-    else:
+        return np.nanmin(x, axis=axis, keepdims=keepdims)  # type: ignore[call-overload]  # numpy-stubs: no union-axis + bool keepdims overload
+    mask = isnan(x)
+    if axis is None and not keepdims:
         try:
-            return np.min(x[x != nv])
+            return np.min(x[~mask])
         except ValueError as e:
             if "zero-size" in str(e):
                 return nv
-            else:
-                raise
+            raise
+    _check_axis_support(x, axis)
+    filled = np.where(mask, _extreme_value(x, high=True), x)
+    ret = np.min(filled, axis=axis, keepdims=True)
+    valid = np.sum(~mask, axis=axis, keepdims=True)
+    ret = np.where(valid == 0, cast("float | int", nv), ret)
+    return _squeeze_reduced(ret, axis, keepdims)
 
 
-def nanargmax(x: npt.NDArray) -> Any:
-    return np.nanargmax(asfloat(x))
+def nanargmax(x: npt.NDArray, axis: Axis = None, keepdims: bool = False) -> Any:
+    """Index of the maximum over the valid values; raises on all-missing slices like numpy."""
+    nv = nanval(x)
+    if nv is np.nan:
+        return np.nanargmax(x, axis=axis, keepdims=keepdims)  # type: ignore[call-overload]  # numpy-stubs: no union-axis + bool keepdims overload
+    mask = isnan(x)
+    filled = np.where(mask, _extreme_value(x, high=False), x)
+    if axis is None and not keepdims:
+        if not np.any(~mask):
+            raise ValueError("All-NaN slice encountered")
+        return np.argmax(filled)
+    _check_axis_support(x, axis)
+    if not np.all(np.any(~mask, axis=axis, keepdims=True)):
+        raise ValueError("All-NaN slice encountered")
+    return np.argmax(filled, axis=axis, keepdims=keepdims)  # type: ignore[call-overload]  # numpy-stubs: no union-axis + bool keepdims overload
 
 
-def nanargmin(x: npt.NDArray) -> Any:
-    return np.nanargmin(asfloat(x))
+def nanargmin(x: npt.NDArray, axis: Axis = None, keepdims: bool = False) -> Any:
+    """Index of the minimum over the valid values; raises on all-missing slices like numpy."""
+    nv = nanval(x)
+    if nv is np.nan:
+        return np.nanargmin(x, axis=axis, keepdims=keepdims)  # type: ignore[call-overload]  # numpy-stubs: no union-axis + bool keepdims overload
+    mask = isnan(x)
+    filled = np.where(mask, _extreme_value(x, high=True), x)
+    if axis is None and not keepdims:
+        if not np.any(~mask):
+            raise ValueError("All-NaN slice encountered")
+        return np.argmin(filled)
+    _check_axis_support(x, axis)
+    if not np.all(np.any(~mask, axis=axis, keepdims=True)):
+        raise ValueError("All-NaN slice encountered")
+    return np.argmin(filled, axis=axis, keepdims=keepdims)  # type: ignore[call-overload]  # numpy-stubs: no union-axis + bool keepdims overload
 
 
 def nanmaximum(x: npt.NDArray, y: npt.NDArray) -> npt.NDArray:
@@ -231,87 +312,119 @@ def nanminimum(x: npt.NDArray, y: npt.NDArray) -> npt.NDArray:
     return z
 
 
-def nansum(x: npt.NDArray) -> Any:
+def nansum(x: npt.NDArray, axis: Axis = None, keepdims: bool = False) -> Any:
+    """Sum over the valid values."""
     nv = nanval(x)
     if nv is np.nan:
-        return np.nansum(x)
-    else:
-        return np.sum(x[x != nv])
+        return np.nansum(x, axis=axis, keepdims=keepdims)  # type: ignore[call-overload]  # numpy-stubs: no union-axis + bool keepdims overload
+    mask = isnan(x)
+    if axis is None and not keepdims:
+        return np.sum(x[~mask])
+    _check_axis_support(x, axis)
+    return np.sum(fix_invalid(x), axis=axis, keepdims=keepdims)  # type: ignore[call-overload]  # numpy-stubs: no union-axis + bool keepdims overload
 
 
-def nanprod(x: npt.NDArray) -> Any:
+def nanprod(x: npt.NDArray, axis: Axis = None, keepdims: bool = False) -> Any:
+    """Product over the valid values."""
     nv = nanval(x)
     if nv is np.nan:
-        return np.nanprod(x, dtype=np.float64)
-    else:
-        return np.prod(x[x != nv])
+        return np.nanprod(x, axis=axis, keepdims=keepdims, dtype=np.float64)  # type: ignore[call-overload]  # numpy-stubs: no union-axis + bool keepdims overload
+    mask = isnan(x)
+    if axis is None and not keepdims:
+        return np.prod(x[~mask])
+    _check_axis_support(x, axis)
+    return np.prod(fix_invalid(x, fill_value=1), axis=axis, keepdims=keepdims)  # type: ignore[call-overload]  # numpy-stubs: no union-axis + bool keepdims overload
 
 
-def nancumsum(x: npt.NDArray) -> npt.NDArray:
-    nv = nanval(x)
-    result = np.cumsum(fix_invalid(x))
-
-    if anynan(x):
-        # cumsum is undefined before the first valid number appears, so we need to replace
-        # the nans starting from the beginning of the array
-        # TODO: Finding the first instance of a value this way is quite some overhead
-        good_idx = np.where(~isnan(x))[0]
-        if len(good_idx) > 0:
-            result[: good_idx[0]] = nv
-        else:
-            result[:] = nv
-    return result
-
-
-def nancumprod(x: npt.NDArray) -> npt.NDArray:
-    nv = nanval(x)
-    result = np.cumprod(fix_invalid(x, fill_value=1))
-
-    if anynan(x):
-        # cumprod is undefined before the first valid number appears, so we need to replace
-        # the nans starting from the beginning of the array
-        good_idx = np.where(~isnan(x))[0]
-        if len(good_idx) > 0:
-            result[: good_idx[0]] = nv
-        else:
-            result[:] = nv
-    return result
+def nancumsum(x: npt.NDArray, axis: int | None = None) -> npt.NDArray:
+    """Cumulative sum over the valid values; positions before the first valid value stay missing."""
+    mask = isnan(x)
+    if axis is None:
+        ret = np.cumsum(fix_invalid(x))
+        nv_ret = nanval(ret)
+        if np.any(mask):
+            good_idx = np.flatnonzero(~mask.ravel())
+            if len(good_idx) == 0:
+                ret[:] = nv_ret
+            elif good_idx[0] > 0:
+                ret[: good_idx[0]] = nv_ret
+        return ret
+    _check_axis_support(x, axis)
+    ret = np.cumsum(fix_invalid(x), axis=axis)
+    first = np.argmax(~mask, axis=axis)
+    has_valid = np.any(~mask, axis=axis)
+    lead = _leading_invalid(x, first, has_valid, axis)
+    return np.where(lead, cast("float | int", nanval(ret)), ret)
 
 
-def nanmean(x: npt.NDArray) -> Any:
+def nancumprod(x: npt.NDArray, axis: int | None = None) -> npt.NDArray:
+    """Cumulative product over the valid values; positions before the first valid value stay missing."""
+    mask = isnan(x)
+    if axis is None:
+        ret = np.cumprod(fix_invalid(x, fill_value=1))
+        nv_ret = nanval(ret)
+        if np.any(mask):
+            good_idx = np.flatnonzero(~mask.ravel())
+            if len(good_idx) == 0:
+                ret[:] = nv_ret
+            elif good_idx[0] > 0:
+                ret[: good_idx[0]] = nv_ret
+        return ret
+    _check_axis_support(x, axis)
+    ret = np.cumprod(fix_invalid(x, fill_value=1), axis=axis)
+    first = np.argmax(~mask, axis=axis)
+    has_valid = np.any(~mask, axis=axis)
+    lead = _leading_invalid(x, first, has_valid, axis)
+    return np.where(lead, cast("float | int", nanval(ret)), ret)
+
+
+def nanmean(x: npt.NDArray, axis: Axis = None, keepdims: bool = False) -> Any:
+    """Arithmetic mean over the valid values; all-missing slices yield NaN."""
     nv = nanval(x)
     if nv is np.nan:
-        return np.nanmean(x)
-    else:
+        return np.nanmean(x, axis=axis, keepdims=keepdims)  # type: ignore[call-overload]  # numpy-stubs: no union-axis + bool keepdims overload
+    mask = isnan(x)
+    if axis is None and not keepdims:
         with np.errstate(invalid="ignore"):
-            return np.mean(x[x != nv])
+            return np.mean(x[~mask])
+    _check_axis_support(x, axis)
+    return _squeeze_reduced(_masked_mean(x, mask, axis), axis, keepdims)
 
 
-def nanmedian(x: npt.NDArray) -> Any:
+def nanmedian(x: npt.NDArray, axis: Axis = None, keepdims: bool = False) -> Any:
+    """Median over the valid values; all-missing slices yield NaN."""
     nv = nanval(x)
     if nv is np.nan:
-        return np.nanmedian(x)
-    else:
+        return np.nanmedian(x, axis=axis, keepdims=keepdims)
+    if axis is None and not keepdims:
         with np.errstate(invalid="ignore"):
-            return np.median(x[x != nv])
+            return np.median(x[~isnan(x)])
+    _check_axis_support(x, axis)
+    return np.nanmedian(asfloat(x), axis=axis, keepdims=keepdims)
 
 
-def nanvar(x: npt.NDArray, ddof: int = 0) -> Any:
+def nanvar(x: npt.NDArray, axis: Axis = None, ddof: int = 0, keepdims: bool = False) -> Any:
+    """Variance over the valid values; slices without enough valid values yield NaN."""
     nv = nanval(x)
     if nv is np.nan:
-        return np.nanvar(x, ddof=ddof)
-    else:
+        return np.nanvar(x, axis=axis, ddof=ddof, keepdims=keepdims)  # type: ignore[call-overload]  # numpy-stubs: no union-axis + bool keepdims overload
+    mask = isnan(x)
+    if axis is None and not keepdims:
         with np.errstate(invalid="ignore"):
-            return np.var(x[x != nv], ddof=ddof)
+            return np.var(x[~mask], ddof=ddof)
+    _check_axis_support(x, axis)
+    valid = np.sum(~mask, axis=axis, keepdims=True)
+    mu = _masked_mean(x, mask, axis)
+    dev = np.where(mask, 0.0, x - mu)
+    s2 = np.sum(dev * dev, axis=axis, keepdims=True)
+    dof = valid - ddof
+    ret = np.divide(s2, dof, out=np.full_like(s2, np.nan), where=dof > 0)
+    return _squeeze_reduced(ret, axis, keepdims)
 
 
-def nanstd(x: npt.NDArray, ddof: int = 0) -> Any:
-    nv = nanval(x)
-    if nv is np.nan:
-        return np.nanstd(x, ddof=ddof)
-    else:
-        with np.errstate(invalid="ignore"):
-            return np.std(x[x != nv], ddof=ddof)
+def nanstd(x: npt.NDArray, axis: Axis = None, ddof: int = 0, keepdims: bool = False) -> Any:
+    """Standard deviation over the valid values; slices without enough valid values yield NaN."""
+    return np.sqrt(nanvar(x, axis=axis, ddof=ddof, keepdims=keepdims))
 
 
 def nanequal(x: npt.NDArray, y: npt.NDArray) -> npt.NDArray[np.bool_]:
