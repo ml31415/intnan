@@ -105,10 +105,10 @@ the `numpy` implementation is used. This makes numba an optional runtime
 dependency. Compiled numba kernels are cached on disk, so no recompilation
 overhead occurs after the first use.
 
-To get the accelerated implementation, simply install numba alongside:
+To get the accelerated implementation, install the `numba` extra:
 
 ```bash
-pip install intnan numba
+pip install "intnan[numba]"
 ```
 
 ## Development
@@ -120,7 +120,7 @@ git clone https://github.com/ml31415/intnan
 cd intnan
 uv sync          # create virtualenv and install all dependencies
 uv run pre-commit install  # optional: run lint, format and type checks on every commit
-uv run pytest    # run the test suite
+uv run pytest    # run the test suite, with line coverage via pytest-cov
 uv run ruff check . && uv run ruff format --check .  # lint and format check
 uv run mypy      # type check
 ```

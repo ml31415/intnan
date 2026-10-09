@@ -8,7 +8,7 @@ try:
     from types import SimpleNamespace
 except ImportError:
 
-    class SimpleNamespace(object):
+    class SimpleNamespace:
         def __init__(self, **kwargs):
             self.__dict__.update(**kwargs)
 

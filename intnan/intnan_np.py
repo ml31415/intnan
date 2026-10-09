@@ -8,7 +8,7 @@ Large negative values are used, so that especially python indexing
 (from the end) is unlikely to work.
 """
 
-from typing import Any, TypeAlias, cast, overload
+from typing import Any, cast, overload
 
 import numpy as np
 import numpy.typing as npt
@@ -42,7 +42,7 @@ __all__ = [
     "nanclose",
 ]
 
-NanValue: TypeAlias = float | int | str | bytes | None
+type NanValue = float | int | str | bytes | None
 
 INTNAN32 = np.iinfo("int32").min  # -2147483648
 INTNAN64 = np.iinfo("int64").min  # -9223372036854775808

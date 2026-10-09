@@ -29,9 +29,13 @@ keywords = ["integer", "nan", "missing values", "intnan"]
 requires-python = ">=3.12"
 dependencies = ["numpy>=2.4"]
 
+[project.optional-dependencies]
+numba = ["numba>=0.68"]
+
 [dependency-groups]
 dev = [
     "pytest",
+    "pytest-cov",
     # numba >= 0.68 is the first release with Python 3.15 wheels
     "numba>=0.68",
     "ruff",
@@ -48,7 +52,7 @@ line-length = 120
 target-version = "py312"
 
 [tool.ruff.lint]
-select = ["E", "F", "W", "I"]
+select = ["E", "F", "W", "I", "B", "UP"]
 
 [tool.ruff.lint.per-file-ignores]
 # Re-exports via star import from the package namespace
@@ -74,6 +78,16 @@ ignore_missing_imports = true
 module = "intnan.tests.*"
 # Dynamic import fallbacks at the top of the test suite
 disable_error_code = ["no-redef", "assignment"]
+
+[tool.pytest.ini_options]
+addopts = "--cov --cov-report=term-missing"
+
+[tool.coverage.run]
+source = ["intnan"]
+omit = ["intnan/_version.py"]
+
+[tool.coverage.report]
+show_missing = true
 
 [tool.setuptools.packages.find]
 include = ["intnan*"]
