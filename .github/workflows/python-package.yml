@@ -26,11 +26,7 @@ jobs:
         python-version: ${{ matrix.python-version }}
     - name: Install dependencies
       run: uv sync --locked
-    - name: Lint with ruff
-      run: |
-        uv run ruff check .
-        uv run ruff format --check .
-    - name: Type check with mypy
-      run: uv run mypy
+    - name: Run pre-commit hooks
+      run: uv run pre-commit run --all-files
     - name: Test with pytest
       run: uv run pytest -v
