@@ -372,3 +372,45 @@ def nanmedian(x: npt.NDArray, axis: Axis = None, keepdims: bool = False) -> Any:
     if _via_impl(axis, keepdims):
         return _impl.nanmedian(x, axis=axis, keepdims=keepdims)
     return _nanmedian(x)
+
+
+def nanpercentile(
+    x: npt.NDArray,
+    q: npt.ArrayLike,
+    axis: Axis = None,
+    out: npt.NDArray | None = None,
+    overwrite_input: bool = False,
+    method: str = "linear",
+    keepdims: bool = False,
+) -> Any:
+    return _impl.nanpercentile(
+        x, q, axis=axis, out=out, overwrite_input=overwrite_input, method=method, keepdims=keepdims
+    )
+
+
+def nanquantile(
+    x: npt.NDArray,
+    q: npt.ArrayLike,
+    axis: Axis = None,
+    out: npt.NDArray | None = None,
+    overwrite_input: bool = False,
+    method: str = "linear",
+    keepdims: bool = False,
+) -> Any:
+    return _impl.nanquantile(
+        x, q, axis=axis, out=out, overwrite_input=overwrite_input, method=method, keepdims=keepdims
+    )
+
+
+def nanptp(x: npt.NDArray, axis: Axis = None, keepdims: bool = False) -> Any:
+    return _impl.nanptp(x, axis=axis, keepdims=keepdims)
+
+
+def nanaverage(
+    x: npt.NDArray,
+    axis: Axis = None,
+    weights: npt.ArrayLike | None = None,
+    returned: bool = False,
+    keepdims: bool = False,
+) -> Any:
+    return _impl.nanaverage(x, axis=axis, weights=weights, returned=returned, keepdims=keepdims)

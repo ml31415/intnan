@@ -512,3 +512,76 @@ def test_axis_unsupported_dtype(inn):
     pytest.raises(ValueError, inn.nanmin, a, axis=0)
     a = np.array([1, None, 3], dtype=object)
     pytest.raises(ValueError, inn.nansum, a, axis=0)
+
+
+@pytest.mark.parametrize("axis", [0, 1, -1, None])
+def test_nanpercentile_axis(inn, nimat, axis):
+    afloat = inn.asfloat(nimat.a)
+    assert_like_ref(inn, inn.nanpercentile(nimat.a, 75, axis=axis), np.nanpercentile(afloat, 75, axis=axis))
+
+
+def test_nanpercentile_median_parity(inn, nimat):
+    np.testing.assert_allclose(inn.nanpercentile(nimat.a, 50, axis=0), inn.nanmedian(nimat.a, axis=0), rtol=1e-6)
+
+
+def test_nanpercentile_requires_numeric(inn):
+    pytest.raises(ValueError, inn.nanpercentile, np.array(["a", "b"]), 50)
+    pytest.raises(ValueError, inn.nanquantile, np.array(["a", "b"]), 0.5)
+
+
+@pytest.mark.parametrize("axis", [0, 1, None])
+def test_nanquantile_axis(inn, nimat, axis):
+    afloat = inn.asfloat(nimat.a)
+    assert_like_ref(inn, inn.nanquantile(nimat.a, 0.25, axis=axis), np.nanquantile(afloat, 0.25, axis=axis))
+    np.testing.assert_allclose(
+        inn.nanquantile(nimat.a, 0.75, axis=axis), inn.nanpercentile(nimat.a, 75, axis=axis), rtol=1e-6
+    )
+
+
+@pytest.mark.parametrize("axis", [0, 1, -1, None])
+def test_nanptp_axis(inn, nimat, axis):
+    afloat = inn.asfloat(nimat.a)
+    assert_like_ref(inn, inn.nanptp(nimat.a, axis=axis), np.nanmax(afloat, axis=axis) - np.nanmin(afloat, axis=axis))
+
+
+def test_nanptp_all_missing(inn):
+    a = np.array([1, 2, 3], dtype=np.int64)
+    a[:] = inn.nanval(a)
+    assert inn.nanptp(a) == inn.nanval(a)
+
+
+@pytest.mark.parametrize("axis", [0, 1, None])
+def test_nanaverage_axis(inn, nimat, axis):
+    # without weights, nanaverage matches nanmean semantics
+    assert_like_ref(inn, inn.nanaverage(nimat.a, axis=axis), np.nanmean(inn.asfloat(nimat.a), axis=axis))
+
+
+def test_nanaverage_weighted(inn, ninp):
+    weights = np.linspace(0.5, 2.0, ninp.a.size)
+    valid = ~inn.isnan(ninp.a)
+    if ninp.nanstate == "allnans":
+        assert np.isnan(inn.nanaverage(ninp.a, weights=weights))
+        return
+    ref = np.average(ninp.a[valid].astype(np.float64), weights=weights[valid])
+    np.testing.assert_allclose(inn.nanaverage(ninp.a, weights=weights), ref, rtol=1e-6)
+
+
+def test_nanaverage_weighted_1d_axis(inn, nimat):
+    weights = np.linspace(0.5, 2.0, nimat.a.shape[0])
+    res, wsum = inn.nanaverage(nimat.a, axis=0, weights=weights, returned=True)
+    valid = ~np.asarray(inn.isnan(nimat.a))
+    w = np.where(valid, np.broadcast_to(weights.reshape(-1, 1), nimat.a.shape), 0.0)
+    with np.errstate(invalid="ignore", divide="ignore"):
+        ref_avg = np.sum(np.where(valid, nimat.a, 0) * w, axis=0) / np.sum(w, axis=0)
+    assert_like_ref(inn, res, ref_avg)
+    np.testing.assert_allclose(wsum, np.sum(w, axis=0), rtol=1e-6)
+
+
+def test_nanaverage_returned(inn, ninp):
+    res, wsum = inn.nanaverage(ninp.a, returned=True)
+    np.testing.assert_allclose(wsum, int(np.count_nonzero(~inn.isnan(ninp.a))))
+
+
+def test_nanaverage_1d_weights_require_axis(inn, nimat):
+    weights = np.linspace(0.5, 2.0, nimat.a.shape[0])
+    pytest.raises(ValueError, inn.nanaverage, nimat.a, weights=weights)

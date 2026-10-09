@@ -34,6 +34,10 @@ __all__ = [
     "nanmedian",
     "nanstd",
     "nanvar",
+    "nanpercentile",
+    "nanquantile",
+    "nanptp",
+    "nanaverage",
     "nansum",
     "nancumsum",
     "nancumprod",
@@ -425,6 +429,89 @@ def nanvar(x: npt.NDArray, axis: Axis = None, ddof: int = 0, keepdims: bool = Fa
 def nanstd(x: npt.NDArray, axis: Axis = None, ddof: int = 0, keepdims: bool = False) -> Any:
     """Standard deviation over the valid values; slices without enough valid values yield NaN."""
     return np.sqrt(nanvar(x, axis=axis, ddof=ddof, keepdims=keepdims))
+
+
+def nanpercentile(
+    x: npt.NDArray,
+    q: npt.ArrayLike,
+    axis: Axis = None,
+    out: npt.NDArray | None = None,
+    overwrite_input: bool = False,
+    method: str = "linear",
+    keepdims: bool = False,
+) -> Any:
+    """Percentiles over the valid values; all-missing slices yield NaN. Always returns floats."""
+    if x.dtype.kind not in _NUMERIC_KINDS:
+        raise ValueError(f"nanpercentile requires numeric dtypes, not for {x.dtype!r}")
+    return np.nanpercentile(
+        asfloat(x), q, axis=axis, out=out, overwrite_input=overwrite_input, method=method, keepdims=keepdims
+    )  # type: ignore[call-overload]  # numpy-stubs: no union-axis + bool keepdims overload
+
+
+def nanquantile(
+    x: npt.NDArray,
+    q: npt.ArrayLike,
+    axis: Axis = None,
+    out: npt.NDArray | None = None,
+    overwrite_input: bool = False,
+    method: str = "linear",
+    keepdims: bool = False,
+) -> Any:
+    """Quantiles over the valid values; all-missing slices yield NaN. Always returns floats."""
+    if x.dtype.kind not in _NUMERIC_KINDS:
+        raise ValueError(f"nanquantile requires numeric dtypes, not for {x.dtype!r}")
+    return np.nanquantile(
+        asfloat(x), q, axis=axis, out=out, overwrite_input=overwrite_input, method=method, keepdims=keepdims
+    )  # type: ignore[call-overload]  # numpy-stubs: no union-axis + bool keepdims overload
+
+
+def nanptp(x: npt.NDArray, axis: Axis = None, keepdims: bool = False) -> Any:
+    """Peak-to-peak (maximum - minimum) over the valid values; all-missing slices yield the missing value."""
+    nv = nanval(x)
+    mask = isnan(x)
+    mx = nanmax(x, axis=axis, keepdims=True)
+    mn = nanmin(x, axis=axis, keepdims=True)
+    valid = np.sum(~mask, axis=axis, keepdims=True)
+    ret = np.where(valid == 0, cast("float | int", nv), mx - mn)
+    return _squeeze_reduced(ret, axis, keepdims)
+
+
+def _broadcast_weights(weights: npt.ArrayLike | None, x: npt.NDArray, axis: Axis) -> npt.NDArray:
+    """Broadcast weights against x, supporting 1d weights along the reduction axis like np.average."""
+    w = np.asarray(weights if weights is not None else 1.0, dtype=np.float64)
+    if w.ndim == 1 and x.ndim > 1:
+        if not isinstance(axis, int):
+            raise ValueError("1d weights require an integer axis for multidimensional arrays")
+        if w.shape[0] != x.shape[axis]:
+            raise ValueError("weights must have the same length as the reduced axis")
+        shape = [1] * x.ndim
+        shape[axis] = w.shape[0]
+        return np.broadcast_to(w.reshape(shape), x.shape)
+    return np.broadcast_to(w, x.shape)
+
+
+def nanaverage(
+    x: npt.NDArray,
+    axis: Axis = None,
+    weights: npt.ArrayLike | None = None,
+    returned: bool = False,
+    keepdims: bool = False,
+) -> Any:
+    """Weighted mean over the valid values; weights at missing positions are excluded, all-missing slices yield NaN.
+
+    Accumulation happens in float64, so the result is always a float array.
+    """
+    _check_axis_support(x, axis)
+    mask = isnan(x)
+    w = np.where(mask, 0, _broadcast_weights(weights, x, axis))
+    xw = np.where(mask, 0, x) * w
+    wsum = np.sum(w, axis=axis, keepdims=True)  # type: ignore[call-overload]
+    total = np.sum(xw, axis=axis, keepdims=True)  # type: ignore[call-overload]
+    ret = np.divide(total, wsum, out=np.full_like(total, np.nan), where=wsum > 0)
+    ret = _squeeze_reduced(ret, axis, keepdims)
+    if returned:
+        return ret, _squeeze_reduced(wsum, axis, keepdims)
+    return ret
 
 
 def nanequal(x: npt.NDArray, y: npt.NDArray) -> npt.NDArray[np.bool_]:
