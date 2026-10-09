@@ -57,7 +57,6 @@ jobs:
           ls -ltrh
           ls -ltrh dist
       - name: Verify the built dist/wheel is valid
-        if: github.event_name == 'push'
         run: |
           uv venv
           uv pip install dist/intnan*.tar.gz
