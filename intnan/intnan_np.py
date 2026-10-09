@@ -30,6 +30,7 @@ __all__ = [
     "nanargmin",
     "nanmaximum",
     "nanminimum",
+    "nanclip",
     "nanmean",
     "nanmedian",
     "nanstd",
@@ -511,6 +512,32 @@ def nanaverage(
     ret = _squeeze_reduced(ret, axis, keepdims)
     if returned:
         return ret, _squeeze_reduced(wsum, axis, keepdims)
+    return ret
+
+
+def _clip_bound(bound: npt.ArrayLike | None, x: npt.NDArray, low: bool) -> Any:
+    """Translate a clip bound for np.clip, treating missing bounds as unbounded."""
+    if bound is None:
+        return _extreme_value(x, high=not low)
+    b = np.asarray(bound)
+    if b.dtype.kind not in _NUMERIC_KINDS:
+        raise ValueError(f"clip bounds must be numeric or None, not {b.dtype!r}")
+    missing = isnan(b)
+    if not np.any(missing):
+        return b
+    return np.where(missing, _extreme_value(x, high=not low), b)
+
+
+def nanclip(x: npt.NDArray, a_min: npt.ArrayLike | None = None, a_max: npt.ArrayLike | None = None) -> npt.NDArray:
+    """Clip the valid values like np.clip; missing values are preserved and missing bounds mean unbounded.
+
+    Like np.clip, float bounds promote integer arrays to float, in which case missing values
+    are marked with NaN afterwards.
+    """
+    if x.dtype.kind not in _NUMERIC_KINDS:
+        raise ValueError(f"nanclip requires numeric dtypes, not for {x.dtype!r}")
+    ret = np.clip(x, _clip_bound(a_min, x, low=True), _clip_bound(a_max, x, low=False))
+    ret[isnan(x)] = nanval(ret)
     return ret
 
 

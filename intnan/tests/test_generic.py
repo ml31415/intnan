@@ -585,3 +585,55 @@ def test_nanaverage_returned(inn, ninp):
 def test_nanaverage_1d_weights_require_axis(inn, nimat):
     weights = np.linspace(0.5, 2.0, nimat.a.shape[0])
     pytest.raises(ValueError, inn.nanaverage, nimat.a, weights=weights)
+
+
+def test_nanclip(inn, ninp):
+    valid = ~inn.isnan(ninp.a)
+    res = inn.nanclip(ninp.a, 10, 90)
+    np.testing.assert_array_equal(res[valid], np.clip(ninp.a[valid], 10, 90))
+    np.testing.assert_array_equal(inn.isnan(res), ~valid)
+
+
+def test_nanclip_bounds_as_arrays(inn, ninp):
+    lo = np.full(ninp.a.shape, 10, dtype=ninp.dtype)
+    hi = np.full(ninp.a.shape, 90, dtype=ninp.dtype)
+    lo[::2] = inn.nanval(lo)  # missing lower bound -> unbounded below
+    hi[1::3] = inn.nanval(hi)  # missing upper bound -> unbounded above
+    res = inn.nanclip(ninp.a, lo, hi)
+    if issubclass(ninp.a.dtype.type, np.floating):
+        extreme_lo, extreme_hi = -np.inf, np.inf
+    else:
+        ii = np.iinfo(ninp.dtype)
+        extreme_lo, extreme_hi = ii.min, ii.max
+    expected = np.clip(ninp.a, np.where(inn.isnan(lo), extreme_lo, lo), np.where(inn.isnan(hi), extreme_hi, hi))
+    valid = ~inn.isnan(ninp.a)
+    expected[~valid] = inn.nanval(expected)
+    np.testing.assert_array_equal(res, expected)
+
+
+def test_nanclip_one_sided(inn, ninp):
+    valid = ~inn.isnan(ninp.a)
+    res = inn.nanclip(ninp.a, None, 90)
+    np.testing.assert_array_equal(res[valid], np.minimum(ninp.a[valid], 90))
+    res = inn.nanclip(ninp.a, 10, None)
+    np.testing.assert_array_equal(res[valid], np.maximum(ninp.a[valid], 10))
+
+
+def test_nanclip_missing_scalar_bound(inn, ninp):
+    valid = ~inn.isnan(ninp.a)
+    res = inn.nanclip(ninp.a, np.nan, 90)
+    np.testing.assert_array_equal(res[valid], np.minimum(ninp.a[valid], 90))
+
+
+def test_nanclip_float_bounds_promote(inn):
+    a = np.array([1, 5, 10], dtype=np.int32)
+    a[1] = inn.nanval(a)
+    res = inn.nanclip(a, 2.5, 7.5)
+    # np.clip promotes to float64, missing values become NaN
+    np.testing.assert_array_equal(res, np.array([2.5, np.nan, 7.5]))
+    assert inn.isnan(res[1])
+
+
+def test_nanclip_requires_numeric(inn):
+    pytest.raises(ValueError, inn.nanclip, np.array(["a", "b"]), 1, 2)
+    pytest.raises(ValueError, inn.nanclip, np.arange(3), "a", 2)

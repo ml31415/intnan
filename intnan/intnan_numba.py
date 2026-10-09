@@ -414,3 +414,7 @@ def nanaverage(
     keepdims: bool = False,
 ) -> Any:
     return _impl.nanaverage(x, axis=axis, weights=weights, returned=returned, keepdims=keepdims)
+
+
+def nanclip(x: npt.NDArray, a_min: npt.ArrayLike | None = None, a_max: npt.ArrayLike | None = None) -> npt.NDArray:
+    return _impl.nanclip(x, a_min=a_min, a_max=a_max)
