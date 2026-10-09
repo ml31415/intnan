@@ -43,6 +43,11 @@ jobs:
     needs: build-artifacts
     runs-on: ubuntu-latest
     steps:
+      # Checkout the repo so astral-sh/setup-uv can find pyproject.toml/uv.lock
+      # for cache key derivation; otherwise its post-step fails with
+      # "Cache path ... does not exist on disk" on release events, which skips
+      # the downstream upload-to-pypi job via the `needs:` dependency.
+      - uses: actions/checkout@v4
       - name: Install uv
         uses: astral-sh/setup-uv@v6
         with:
