@@ -21,6 +21,7 @@ classifiers = [
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
     "Programming Language :: Python :: 3.14",
+    "Programming Language :: Python :: 3.15",
     "Topic :: Scientific/Engineering",
     "Topic :: Software Development :: Libraries",
 ]
@@ -31,7 +32,8 @@ dependencies = ["numpy>=2.4"]
 [dependency-groups]
 dev = [
     "pytest",
-    "numba",
+    # numba >= 0.68 is the first release with Python 3.15 wheels
+    "numba>=0.68",
     "ruff",
     "mypy",
     "pre-commit",

@@ -126,7 +126,7 @@ uv run mypy      # type check
 ```
 
 Tests are run against both implementations and a range of dtypes
-(`int32`, `int64`, `float32`, `float64`) in the CI on Python 3.12 through 3.14.
+(`int32`, `int64`, `float32`, `float64`) in the CI on Python 3.12 through 3.15.
 
 ## License
 
