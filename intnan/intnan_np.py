@@ -24,6 +24,9 @@ __all__ = [
     "asint",
     "allnan",
     "anynan",
+    "nancount",
+    "nanfirst",
+    "nanlast",
     "nanmin",
     "nanmax",
     "nanargmax",
@@ -178,6 +181,48 @@ def allnan(x: npt.NDArray, axis: Axis = None, keepdims: bool = False) -> Any:
     if axis is None and not keepdims:
         return bool(np.all(mask))
     return np.all(mask, axis=axis, keepdims=keepdims)  # type: ignore[call-overload]  # numpy-stubs: no union-axis + bool keepdims overload
+
+
+def nancount(x: npt.NDArray, axis: Axis = None, keepdims: bool = False) -> Any:
+    """Number of valid values; with axis, count per slice."""
+    mask = isnan(x)
+    if axis is None and not keepdims:
+        return int(np.count_nonzero(~mask))
+    return np.sum(~mask, axis=axis, keepdims=keepdims)  # type: ignore[call-overload]
+
+
+def nanfirst(x: npt.NDArray, axis: int | None = 0) -> Any:
+    """First valid value along axis (default 0, None for flattened); all-missing slices yield the missing value."""
+    nv = nanval(x)
+    mask = ~isnan(x)
+    if axis is None:
+        flat = np.flatnonzero(mask.ravel())
+        return x.ravel()[flat[0]] if len(flat) else nv
+    _check_axis_support(x, axis)
+    if not np.any(mask):
+        return nv
+    first = np.argmax(mask, axis=axis)
+    ret = np.take_along_axis(x, np.expand_dims(first, axis), axis=axis)
+    ret = np.squeeze(ret, axis=axis)
+    has_valid = np.any(mask, axis=axis)
+    return np.where(has_valid, ret, cast("float | int", nv))
+
+
+def nanlast(x: npt.NDArray, axis: int | None = -1) -> Any:
+    """Last valid value along axis (default -1, None for flattened); all-missing slices yield the missing value."""
+    nv = nanval(x)
+    mask = ~isnan(x)
+    if axis is None:
+        flat = np.flatnonzero(mask.ravel())
+        return x.ravel()[flat[-1]] if len(flat) else nv
+    _check_axis_support(x, axis)
+    if not np.any(mask):
+        return nv
+    last = x.shape[axis] - 1 - np.argmax(np.flip(mask, axis=axis), axis=axis)
+    ret = np.take_along_axis(x, np.expand_dims(last, axis), axis=axis)
+    ret = np.squeeze(ret, axis=axis)
+    has_valid = np.any(mask, axis=axis)
+    return np.where(has_valid, ret, cast("float | int", nv))  # type: ignore[call-overload]  # numpy-stubs: no union-axis + bool keepdims overload
 
 
 def _extreme_value(x: npt.NDArray, high: bool) -> Any:

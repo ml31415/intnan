@@ -418,3 +418,15 @@ def nanaverage(
 
 def nanclip(x: npt.NDArray, a_min: npt.ArrayLike | None = None, a_max: npt.ArrayLike | None = None) -> npt.NDArray:
     return _impl.nanclip(x, a_min=a_min, a_max=a_max)
+
+
+def nancount(x: npt.NDArray, axis: Axis = None, keepdims: bool = False) -> Any:
+    return _impl.nancount(x, axis=axis, keepdims=keepdims)
+
+
+def nanfirst(x: npt.NDArray, axis: int | None = 0) -> Any:
+    return _impl.nanfirst(x, axis=axis)
+
+
+def nanlast(x: npt.NDArray, axis: int | None = -1) -> Any:
+    return _impl.nanlast(x, axis=axis)

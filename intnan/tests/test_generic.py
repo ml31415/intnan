@@ -637,3 +637,67 @@ def test_nanclip_float_bounds_promote(inn):
 def test_nanclip_requires_numeric(inn):
     pytest.raises(ValueError, inn.nanclip, np.array(["a", "b"]), 1, 2)
     pytest.raises(ValueError, inn.nanclip, np.arange(3), "a", 2)
+
+
+def _first_last_reference(inn, a, mask, axis, last):
+    """Independent per-slice reference for nanfirst/nanlast."""
+    nv = inn.nanval(a)
+    ax = axis % a.ndim
+    shape = list(a.shape)
+    del shape[ax]
+    ref = np.empty(shape, dtype=a.dtype)
+    for idx in np.ndindex(*shape):
+        src = list(idx)
+        src.insert(ax, slice(None))
+        col = a[tuple(src)]
+        colmask = mask[tuple(src)]
+        order = range(len(col) - 1, -1, -1) if last else range(len(col))
+        pick = nv
+        for i in order:
+            if not colmask[i]:
+                pick = col[i]
+                break
+        ref[idx] = pick
+    return ref
+
+
+def test_nancount(inn, ninp):
+    assert inn.nancount(ninp.a) == int(np.count_nonzero(~inn.isnan(ninp.a)))
+
+
+@pytest.mark.parametrize("axis", [0, 1, -1, None])
+def test_nancount_axis(inn, nimat, axis):
+    ref = np.sum(~np.asarray(inn.isnan(nimat.a)), axis=axis)
+    np.testing.assert_array_equal(inn.nancount(nimat.a, axis=axis), ref)
+
+
+def test_nancount_keepdims(inn, nimat):
+    assert inn.nancount(nimat.a, axis=0, keepdims=True).shape == (1, nimat.a.shape[1])
+
+
+@pytest.mark.parametrize("axis", [0, 1, -1])
+def test_nanfirst_axis(inn, nimat, axis):
+    res = inn.nanfirst(nimat.a, axis=axis)
+    ref = _first_last_reference(inn, nimat.a, nimat.mask, axis, last=False)
+    assert_like_ref(inn, res, ref)
+
+
+@pytest.mark.parametrize("axis", [0, 1, -1])
+def test_nanlast_axis(inn, nimat, axis):
+    res = inn.nanlast(nimat.a, axis=axis)
+    ref = _first_last_reference(inn, nimat.a, nimat.mask, axis, last=True)
+    assert_like_ref(inn, res, ref)
+
+
+def test_nanfirst_last_flat(inn, nimat):
+    flat_valid = np.flatnonzero(~nimat.mask.ravel())
+    if len(flat_valid):
+        assert inn.nanfirst(nimat.a, axis=None) == nimat.a.ravel()[flat_valid[0]]
+        assert inn.nanlast(nimat.a, axis=None) == nimat.a.ravel()[flat_valid[-1]]
+
+
+def test_nanfirst_last_all_missing(inn):
+    a = np.arange(3, dtype=np.int64)
+    a[:] = inn.nanval(a)
+    assert inn.nanfirst(a) == inn.nanval(a)
+    assert inn.nanlast(a) == inn.nanval(a)
