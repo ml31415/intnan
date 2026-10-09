@@ -105,10 +105,10 @@ the `numpy` implementation is used. This makes numba an optional runtime
 dependency. Compiled numba kernels are cached on disk, so no recompilation
 overhead occurs after the first use.
 
-To get the accelerated implementation, simply install numba alongside:
+To get the accelerated implementation, install the `numba` extra:
 
 ```bash
-pip install intnan numba
+pip install "intnan[numba]"
 ```
 
 ## Development
