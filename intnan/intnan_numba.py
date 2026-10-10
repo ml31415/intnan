@@ -27,9 +27,29 @@ from .intnan_np import (
 )
 
 
-def _via_impl(axis: Any, keepdims: bool = False) -> bool:
-    """True when the axis-aware numpy implementation has to be used instead of the JIT kernel."""
+def requires_ndim(axis: Axis, keepdims: bool = False) -> bool:
+    """True when a call needs the axis-aware numpy implementation instead of the flat JIT kernel."""
     return axis is not None or keepdims
+
+
+def dispatch_ndim(base: str, kernel: Callable[..., Any]) -> Callable[..., Any]:
+    """Axis-aware wrapper around a flat JIT kernel.
+
+    Calls with axis or keepdims are routed to the numpy implementation function of the same
+    base name; the kernel handles the flattened case and receives the missing value of the
+    input appended after x.
+    """
+    impl: Any = getattr(_impl, base)
+
+    def wrapper(x: npt.NDArray, axis: Axis = None, keepdims: bool = False, *args: Any, **kwargs: Any) -> Any:
+        if requires_ndim(axis, keepdims):
+            return impl(x, *args, axis=axis, keepdims=keepdims, **kwargs)
+        return kernel(x, nanval(x), *args, **kwargs)
+
+    wrapper.__name__ = base
+    wrapper.__qualname__ = base
+    wrapper.__doc__ = impl.__doc__
+    return wrapper
 
 
 def nancalc(func: Callable[..., Any]) -> Callable[..., Any]:
@@ -63,7 +83,7 @@ def fix_invalid(x: npt.NDArray, nan: Any, copy: bool = True, fill_value: Any = 0
     return ret
 
 
-@nancalc
+@nb.njit(cache=True)
 def _allnan(x: npt.NDArray, nan: Any) -> bool:
     for x_ in x.flat:
         if not isnan_vec(x_, nan):
@@ -71,7 +91,7 @@ def _allnan(x: npt.NDArray, nan: Any) -> bool:
     return True
 
 
-@nancalc
+@nb.njit(cache=True)
 def _anynan(x: npt.NDArray, nan: Any) -> bool:
     for x_ in x.flat:
         if isnan_vec(x_, nan):
@@ -79,7 +99,7 @@ def _anynan(x: npt.NDArray, nan: Any) -> bool:
     return False
 
 
-@nancalc
+@nb.njit(cache=True)
 def _nanmax(x: npt.NDArray, nan: Any) -> Any:
     cmp_val = nan
     for x_ in x.flat:
@@ -92,7 +112,7 @@ def _nanmax(x: npt.NDArray, nan: Any) -> Any:
     return cmp_val
 
 
-@nancalc
+@nb.njit(cache=True)
 def _nanmin(x: npt.NDArray, nan: Any) -> Any:
     cmp_val = nan
     for x_ in x.flat:
@@ -105,7 +125,7 @@ def _nanmin(x: npt.NDArray, nan: Any) -> Any:
     return cmp_val
 
 
-@nancalc
+@nb.njit(cache=True)
 def _nanargmax(x: npt.NDArray, nan: Any) -> Any:
     idx = -1
     cmp_val = nan
@@ -120,7 +140,7 @@ def _nanargmax(x: npt.NDArray, nan: Any) -> Any:
     return idx
 
 
-@nancalc
+@nb.njit(cache=True)
 def _nanargmin(x: npt.NDArray, nan: Any) -> Any:
     idx = -1
     cmp_val = nan
@@ -169,7 +189,7 @@ def nanminimum(x: npt.NDArray, y: npt.NDArray, nan: Any) -> npt.NDArray:
     return ret
 
 
-@nancalc
+@nb.njit(cache=True)
 def _nansum(x: npt.NDArray, nan: Any) -> Any:
     ret = 0
     for x_ in x.flat:
@@ -178,7 +198,7 @@ def _nansum(x: npt.NDArray, nan: Any) -> Any:
     return ret
 
 
-@nancalc
+@nb.njit(cache=True)
 def _nanprod(x: npt.NDArray, nan: Any) -> Any:
     ret = 1
     for x_ in x.flat:
@@ -244,7 +264,7 @@ def nancumprod(x: npt.NDArray, axis: int | None = None) -> npt.NDArray:
     return _impl.nancumprod(x, axis=axis)
 
 
-@nancalc
+@nb.njit(cache=True)
 def _nanmean(x: npt.NDArray, nan: Any) -> Any:
     ret = 0.0
     cnt = 0
@@ -277,13 +297,7 @@ def _nanvar(x: npt.NDArray, nan: Any, ddof: int = 0) -> Any:
 _jnanvar = nb.njit(_nanvar, cache=True)
 
 
-def nanvar(x: npt.NDArray, axis: Axis = None, ddof: int = 0, keepdims: bool = False) -> Any:
-    if _via_impl(axis, keepdims):
-        return _impl.nanvar(x, axis=axis, ddof=ddof, keepdims=keepdims)
-    return _jnanvar(x, nanval(x), ddof=ddof)
-
-
-@nancalc
+@nb.njit(cache=True)
 def _nanmedian(x: npt.NDArray, nan: Any) -> Any:
     cnt = 0
     for x_ in x.flat:
@@ -303,130 +317,31 @@ def _nanmedian(x: npt.NDArray, nan: Any) -> Any:
     return (tmp[cnt // 2 - 1] + tmp[cnt // 2]) / 2
 
 
-@nancalc
+@nb.njit(cache=True)
 def _nanstd(x: npt.NDArray, nan: Any, ddof: int = 0) -> Any:
     return np.sqrt(_jnanvar(x, nan, ddof=ddof))
 
 
-def nanstd(x: npt.NDArray, axis: Axis = None, ddof: int = 0, keepdims: bool = False) -> Any:
-    if _via_impl(axis, keepdims):
-        return _impl.nanstd(x, axis=axis, ddof=ddof, keepdims=keepdims)
-    return _nanstd(x, ddof=ddof)
+# Axis-aware views of the flat kernels; calls with axis or keepdims use the numpy implementation
+allnan = dispatch_ndim("allnan", _allnan)
+anynan = dispatch_ndim("anynan", _anynan)
+nanmax = dispatch_ndim("nanmax", _nanmax)
+nanmin = dispatch_ndim("nanmin", _nanmin)
+nanargmax = dispatch_ndim("nanargmax", _nanargmax)
+nanargmin = dispatch_ndim("nanargmin", _nanargmin)
+nansum = dispatch_ndim("nansum", _nansum)
+nanprod = dispatch_ndim("nanprod", _nanprod)
+nanmean = dispatch_ndim("nanmean", _nanmean)
+nanmedian = dispatch_ndim("nanmedian", _nanmedian)
+nanvar = dispatch_ndim("nanvar", _jnanvar)
+nanstd = dispatch_ndim("nanstd", _nanstd)
 
-
-def allnan(x: npt.NDArray, axis: Axis = None, keepdims: bool = False) -> Any:
-    if _via_impl(axis, keepdims):
-        return _impl.allnan(x, axis=axis, keepdims=keepdims)
-    return _allnan(x)
-
-
-def anynan(x: npt.NDArray, axis: Axis = None, keepdims: bool = False) -> Any:
-    if _via_impl(axis, keepdims):
-        return _impl.anynan(x, axis=axis, keepdims=keepdims)
-    return _anynan(x)
-
-
-def nanmax(x: npt.NDArray, axis: Axis = None, keepdims: bool = False) -> Any:
-    if _via_impl(axis, keepdims):
-        return _impl.nanmax(x, axis=axis, keepdims=keepdims)
-    return _nanmax(x)
-
-
-def nanmin(x: npt.NDArray, axis: Axis = None, keepdims: bool = False) -> Any:
-    if _via_impl(axis, keepdims):
-        return _impl.nanmin(x, axis=axis, keepdims=keepdims)
-    return _nanmin(x)
-
-
-def nanargmax(x: npt.NDArray, axis: Axis = None, keepdims: bool = False) -> Any:
-    if _via_impl(axis, keepdims):
-        return _impl.nanargmax(x, axis=axis, keepdims=keepdims)
-    return _nanargmax(x)
-
-
-def nanargmin(x: npt.NDArray, axis: Axis = None, keepdims: bool = False) -> Any:
-    if _via_impl(axis, keepdims):
-        return _impl.nanargmin(x, axis=axis, keepdims=keepdims)
-    return _nanargmin(x)
-
-
-def nansum(x: npt.NDArray, axis: Axis = None, keepdims: bool = False) -> Any:
-    if _via_impl(axis, keepdims):
-        return _impl.nansum(x, axis=axis, keepdims=keepdims)
-    return _nansum(x)
-
-
-def nanprod(x: npt.NDArray, axis: Axis = None, keepdims: bool = False) -> Any:
-    if _via_impl(axis, keepdims):
-        return _impl.nanprod(x, axis=axis, keepdims=keepdims)
-    return _nanprod(x)
-
-
-def nanmean(x: npt.NDArray, axis: Axis = None, keepdims: bool = False) -> Any:
-    if _via_impl(axis, keepdims):
-        return _impl.nanmean(x, axis=axis, keepdims=keepdims)
-    return _nanmean(x)
-
-
-def nanmedian(x: npt.NDArray, axis: Axis = None, keepdims: bool = False) -> Any:
-    if _via_impl(axis, keepdims):
-        return _impl.nanmedian(x, axis=axis, keepdims=keepdims)
-    return _nanmedian(x)
-
-
-def nanpercentile(
-    x: npt.NDArray,
-    q: npt.ArrayLike,
-    axis: Axis = None,
-    out: npt.NDArray | None = None,
-    overwrite_input: bool = False,
-    method: str = "linear",
-    keepdims: bool = False,
-) -> Any:
-    return _impl.nanpercentile(
-        x, q, axis=axis, out=out, overwrite_input=overwrite_input, method=method, keepdims=keepdims
-    )
-
-
-def nanquantile(
-    x: npt.NDArray,
-    q: npt.ArrayLike,
-    axis: Axis = None,
-    out: npt.NDArray | None = None,
-    overwrite_input: bool = False,
-    method: str = "linear",
-    keepdims: bool = False,
-) -> Any:
-    return _impl.nanquantile(
-        x, q, axis=axis, out=out, overwrite_input=overwrite_input, method=method, keepdims=keepdims
-    )
-
-
-def nanptp(x: npt.NDArray, axis: Axis = None, keepdims: bool = False) -> Any:
-    return _impl.nanptp(x, axis=axis, keepdims=keepdims)
-
-
-def nanaverage(
-    x: npt.NDArray,
-    axis: Axis = None,
-    weights: npt.ArrayLike | None = None,
-    returned: bool = False,
-    keepdims: bool = False,
-) -> Any:
-    return _impl.nanaverage(x, axis=axis, weights=weights, returned=returned, keepdims=keepdims)
-
-
-def nanclip(x: npt.NDArray, a_min: npt.ArrayLike | None = None, a_max: npt.ArrayLike | None = None) -> npt.NDArray:
-    return _impl.nanclip(x, a_min=a_min, a_max=a_max)
-
-
-def nancount(x: npt.NDArray, axis: Axis = None, keepdims: bool = False) -> Any:
-    return _impl.nancount(x, axis=axis, keepdims=keepdims)
-
-
-def nanfirst(x: npt.NDArray, axis: int | None = 0) -> Any:
-    return _impl.nanfirst(x, axis=axis)
-
-
-def nanlast(x: npt.NDArray, axis: int | None = -1) -> Any:
-    return _impl.nanlast(x, axis=axis)
+# Functions without a JIT kernel are taken from the numpy implementation directly
+nanpercentile = _impl.nanpercentile
+nanquantile = _impl.nanquantile
+nanptp = _impl.nanptp
+nanaverage = _impl.nanaverage
+nanclip = _impl.nanclip
+nancount = _impl.nancount
+nanfirst = _impl.nanfirst
+nanlast = _impl.nanlast
