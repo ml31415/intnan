@@ -62,7 +62,10 @@ intnan.fix_invalid(a)  # array([1, 0, 3], dtype=int32)
 
 The following functions are provided by `intnan`. Where applicable, their
 semantics mirror the corresponding `numpy` function, with missing values
-ignored instead of propagated.
+ignored instead of propagated. All reductions accept the usual `axis` and
+`keepdims` arguments like their `numpy` counterparts. All-missing slices
+yield the missing value for integer dtypes and `NaN` for floating dtypes;
+the `arg*` functions raise on all-missing slices like `numpy` does.
 
 Missing value handling:
 
@@ -71,18 +74,27 @@ Missing value handling:
 - `fix_invalid(x, copy=True, fill_value=0)` — replace missing values
 - `asfloat(x)` — convert to a float array, missing values become `NaN`
 - `asint(x)` — convert to an integer array, missing values become the integer missing value
-- `anynan(x)`, `allnan(x)` — test for the presence of missing values
+- `anynan(x, axis=None)`, `allnan(x, axis=None)` — test for the presence of missing values
+- `nancount(x, axis=None)` — number of valid values
 
 Reductions:
 
-- `nanmax(x)`, `nanmin(x)` and their index counterparts `nanargmax(x)`, `nanargmin(x)`
+- `nanmax(x)`, `nanmin(x)`, `nanptp(x)` and their index counterparts `nanargmax(x)`, `nanargmin(x)`
 - `nansum(x)`, `nanprod(x)`, `nancumsum(x)`, `nancumprod(x)`
-- `nanmean(x)`, `nanmedian(x)`, `nanvar(x, ddof=0)`, `nanstd(x, ddof=0)`
+- `nanmean(x)`, `nanmedian(x)`, `nanvar(x, axis=None, ddof=0)`, `nanstd(x, axis=None, ddof=0)`
+- `nanpercentile(x, q)`, `nanquantile(x, q)` — like their `numpy` counterparts, always returning floats
+- `nanaverage(x, axis=None, weights=None, returned=False)` — weighted mean excluding weights at missing positions
+
+Selection:
+
+- `nanfirst(x, axis=0)`, `nanlast(x, axis=-1)` — first/last valid value along an axis
 
 Element-wise binary operations:
 
 - `nanmaximum(x, y)`, `nanminimum(x, y)` — as `np.maximum`/`np.minimum`, but
   picking the valid value wherever one input is missing
+- `nanclip(x, a_min=None, a_max=None)` — as `np.clip`, but preserving missing
+  values and treating missing bounds as unbounded
 
 Comparison:
 
