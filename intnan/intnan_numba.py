@@ -29,11 +29,6 @@ from .intnan_np import (
 )
 
 
-def requires_ndim(axis: Axis, keepdims: bool = False) -> bool:
-    """True when a call needs the axis-aware numpy implementation instead of the flat JIT kernel."""
-    return axis is not None or keepdims
-
-
 def dispatch_ndim(func: Callable[..., Any] | None = None, *, axis_default: int | None = None) -> Any:
     """Wrap a flat JIT kernel into the axis-aware public function of the same name.
 
@@ -50,7 +45,7 @@ def dispatch_ndim(func: Callable[..., Any] | None = None, *, axis_default: int |
         def wrapper(
             x: npt.NDArray, axis: Axis = axis_default, keepdims: bool = False, *args: Any, **kwargs: Any
         ) -> Any:
-            # inline requires_ndim() plus the object check to keep the per-call overhead low
+            # axis/keepdims/object routing inline, to keep the per-call overhead low
             if axis is not None or keepdims or x.dtype.kind == "O":
                 if with_keepdims:
                     return impl(x, *args, axis=axis, keepdims=keepdims, **kwargs)
@@ -427,7 +422,7 @@ def nanaverage(
     returned: bool = False,
     keepdims: bool = False,
 ) -> Any:
-    if x.dtype.kind not in _NUMERIC_KINDS or requires_ndim(axis, keepdims) or weights is not None or returned:
+    if x.dtype.kind not in _NUMERIC_KINDS or axis is not None or keepdims or weights is not None or returned:
         return _impl.nanaverage(x, axis=axis, weights=weights, returned=returned, keepdims=keepdims)
     return _nanaverage(x, nanval(x))
 
@@ -470,7 +465,8 @@ def nanpercentile(
 ) -> Any:
     if (
         x.dtype.kind not in _NUMERIC_KINDS
-        or requires_ndim(axis, keepdims)
+        or axis is not None
+        or keepdims
         or out is not None
         or overwrite_input
         or method != "linear"
@@ -493,7 +489,8 @@ def nanquantile(
 ) -> Any:
     if (
         x.dtype.kind not in _NUMERIC_KINDS
-        or requires_ndim(axis, keepdims)
+        or axis is not None
+        or keepdims
         or out is not None
         or overwrite_input
         or method != "linear"
