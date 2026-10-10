@@ -486,11 +486,17 @@ def nanpercentile(
     method: str = "linear",
     keepdims: bool = False,
 ) -> Any:
-    """Percentiles over the valid values; all-missing slices yield NaN. Always returns floats."""
+    """Percentiles over the valid values; all-missing slices yield NaN. Always returns float64."""
     if x.dtype.kind not in _NUMERIC_KINDS:
         raise ValueError(f"nanpercentile requires numeric dtypes, not for {x.dtype!r}")
     return np.nanpercentile(
-        asfloat(x), q, axis=axis, out=out, overwrite_input=overwrite_input, method=method, keepdims=keepdims
+        np.asarray(asfloat(x), dtype=np.float64),
+        q,
+        axis=axis,
+        out=out,
+        overwrite_input=overwrite_input,
+        method=method,
+        keepdims=keepdims,
     )  # type: ignore[call-overload]  # numpy-stubs: no union-axis + bool keepdims overload
 
 
@@ -503,17 +509,28 @@ def nanquantile(
     method: str = "linear",
     keepdims: bool = False,
 ) -> Any:
-    """Quantiles over the valid values; all-missing slices yield NaN. Always returns floats."""
+    """Quantiles over the valid values; all-missing slices yield NaN. Always returns float64."""
     if x.dtype.kind not in _NUMERIC_KINDS:
         raise ValueError(f"nanquantile requires numeric dtypes, not for {x.dtype!r}")
     return np.nanquantile(
-        asfloat(x), q, axis=axis, out=out, overwrite_input=overwrite_input, method=method, keepdims=keepdims
+        np.asarray(asfloat(x), dtype=np.float64),
+        q,
+        axis=axis,
+        out=out,
+        overwrite_input=overwrite_input,
+        method=method,
+        keepdims=keepdims,
     )  # type: ignore[call-overload]  # numpy-stubs: no union-axis + bool keepdims overload
 
 
 def nanptp(x: npt.NDArray, axis: Axis = None, keepdims: bool = False) -> Any:
     """Peak-to-peak (maximum - minimum) over the valid values; all-missing slices yield the missing value."""
     nv = nanval(x)
+    if x.dtype.kind == "O":
+        _check_axis_support(x, axis)
+        if allnan(x):
+            return nv
+        return cast("float | int", nanmax(x)) - cast("float | int", nanmin(x))
     mask = isnan(x)
     mx = nanmax(x, axis=axis, keepdims=True)
     mn = nanmin(x, axis=axis, keepdims=True)

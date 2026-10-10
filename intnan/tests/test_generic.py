@@ -701,3 +701,26 @@ def test_nanfirst_last_all_missing(inn):
     a[:] = inn.nanval(a)
     assert inn.nanfirst(a) == inn.nanval(a)
     assert inn.nanlast(a) == inn.nanval(a)
+
+
+def test_object_arrays(inn):
+    a = np.array([1, None, 3], dtype=object)
+    assert inn.nanmax(a) == 3
+    assert inn.nanmin(a) == 1
+    assert inn.nancount(a) == 2
+    assert inn.nanptp(a) == 2
+    # functions reducing along an axis require numeric dtypes
+    pytest.raises(ValueError, inn.nanfirst, a)
+
+
+def test_nanpercentile_array_q(inn, nimat):
+    afloat = inn.asfloat(nimat.a)
+    res = inn.nanpercentile(nimat.a, [25, 50, 75], axis=0)
+    assert_like_ref(inn, res, np.nanpercentile(afloat, [25, 50, 75], axis=0))
+
+
+def test_nanpercentile_scalar_positions(inn):
+    a = np.arange(101)
+    assert inn.nanpercentile(a, 0) == 0
+    assert inn.nanpercentile(a, 100) == 100
+    assert inn.nanpercentile(a, 50) == 50.0
