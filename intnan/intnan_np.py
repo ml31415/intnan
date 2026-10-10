@@ -169,18 +169,26 @@ def asint(x: npt.NDArray) -> npt.NDArray[np.integer]:
 
 def anynan(x: npt.NDArray, axis: Axis = None, keepdims: bool = False) -> Any:
     """Test if any value is missing; with axis, test per slice."""
-    mask = isnan(x)
+    nv = nanval(x)
     if axis is None and not keepdims:
-        return bool(np.any(mask))
-    return np.any(mask, axis=axis, keepdims=keepdims)  # type: ignore[call-overload]  # numpy-stubs: no union-axis + bool keepdims overload
+        if nv is None:
+            return any(val is None for val in x.flat)
+        if nv is np.nan:
+            return bool(np.any(np.isnan(x)))
+        return bool(nv in x)
+    return np.any(isnan(x), axis=axis, keepdims=keepdims)  # type: ignore[call-overload]  # numpy-stubs: no union-axis + bool keepdims overload
 
 
 def allnan(x: npt.NDArray, axis: Axis = None, keepdims: bool = False) -> Any:
     """Test if all values are missing; with axis, test per slice."""
-    mask = isnan(x)
+    nv = nanval(x)
     if axis is None and not keepdims:
-        return bool(np.all(mask))
-    return np.all(mask, axis=axis, keepdims=keepdims)  # type: ignore[call-overload]  # numpy-stubs: no union-axis + bool keepdims overload
+        if nv is None:
+            return all(val is None for val in x.flat)
+        if nv is np.nan:
+            return bool(np.all(np.isnan(x)))
+        return bool(np.all(x == nv))
+    return np.all(isnan(x), axis=axis, keepdims=keepdims)  # type: ignore[call-overload]  # numpy-stubs: no union-axis + bool keepdims overload
 
 
 def nancount(x: npt.NDArray, axis: Axis = None, keepdims: bool = False) -> Any:

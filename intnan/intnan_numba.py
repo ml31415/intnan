@@ -50,7 +50,8 @@ def dispatch_ndim(func: Callable[..., Any] | None = None, *, axis_default: int |
         def wrapper(
             x: npt.NDArray, axis: Axis = axis_default, keepdims: bool = False, *args: Any, **kwargs: Any
         ) -> Any:
-            if x.dtype.kind == "O" or requires_ndim(axis, keepdims):
+            # inline requires_ndim() plus the object check to keep the per-call overhead low
+            if axis is not None or keepdims or x.dtype.kind == "O":
                 if with_keepdims:
                     return impl(x, *args, axis=axis, keepdims=keepdims, **kwargs)
                 return impl(x, *args, axis=axis, **kwargs)
@@ -87,11 +88,18 @@ def fix_invalid(x: npt.NDArray, nan: Any, copy: bool = True, fill_value: Any = 0
         ret = np.empty_like(x)
     else:
         ret = x
-    for i in nb.prange(len(x.flat)):
-        if isnan_vec(x.flat[i], nan):
-            ret.flat[i] = fill_value
-        else:
-            ret.flat[i] = x.flat[i]
+    if x.ndim == 1:
+        for i in range(len(x)):
+            if isnan_vec(x[i], nan):
+                ret[i] = fill_value
+            else:
+                ret[i] = x[i]
+    else:
+        for i in nb.prange(len(x.flat)):
+            if isnan_vec(x.flat[i], nan):
+                ret.flat[i] = fill_value
+            else:
+                ret.flat[i] = x.flat[i]
     return ret
 
 
