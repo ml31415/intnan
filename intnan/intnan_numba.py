@@ -29,13 +29,31 @@ from .intnan_np import (
 )
 
 
-def dispatch_ndim(func: Callable[..., Any] | None = None, *, axis_default: int | None = None) -> Any:
+def _memory_order_view(x: npt.NDArray) -> npt.NDArray:
+    """Return a view over x whose flat order is its memory order.
+
+    Scanning a Fortran ordered array in flat order walks it against its strides, which costs
+    a cache miss per element; the transposed view is C ordered, so the same scan is sequential.
+    Only valid for operations that do not depend on the flat element order.
+    """
+    if x.ndim > 1 and not x.flags.c_contiguous and x.flags.f_contiguous:
+        return x.T
+    return x
+
+
+def dispatch_ndim(
+    func: Callable[..., Any] | None = None, *, axis_default: int | None = None, layout_free: bool = False
+) -> Any:
     """Wrap a flat JIT kernel into the axis-aware public function of the same name.
 
     Calls with axis or keepdims (and object arrays) are routed to the numpy implementation of
     the same name; the kernel handles the flattened case and receives the missing value of the
     input appended after x. Kernels that other jitted functions call internally must be
     exposed through a separate private dispatcher instead.
+
+    Kernels of layout free functions do not depend on the flat element order, so a Fortran
+    ordered input is handed to them transposed to keep the scan in memory order. Keep the
+    check inline rather than calling _memory_order_view, as the per call overhead shows.
     """
 
     def build(kernel: Callable[..., Any]) -> Callable[..., Any]:
@@ -50,6 +68,9 @@ def dispatch_ndim(func: Callable[..., Any] | None = None, *, axis_default: int |
                 if with_keepdims:
                     return impl(x, *args, axis=axis, keepdims=keepdims, **kwargs)
                 return impl(x, *args, axis=axis, **kwargs)
+            # the ndim test first, so that the flat case only costs one attribute lookup
+            if layout_free and x.ndim > 1 and not x.flags.c_contiguous and x.flags.f_contiguous:
+                x = x.T
             return kernel(x, nanval(x), *args, **kwargs)
 
         wrapper.__name__ = kernel.__name__
@@ -98,7 +119,7 @@ def fix_invalid(x: npt.NDArray, nan: Any, copy: bool = True, fill_value: Any = 0
     return ret
 
 
-@dispatch_ndim
+@dispatch_ndim(layout_free=True)
 @nb.njit(cache=True)
 def allnan(x: npt.NDArray, nan: Any) -> bool:
     for x_ in x.flat:
@@ -107,7 +128,7 @@ def allnan(x: npt.NDArray, nan: Any) -> bool:
     return True
 
 
-@dispatch_ndim
+@dispatch_ndim(layout_free=True)
 @nb.njit(cache=True)
 def anynan(x: npt.NDArray, nan: Any) -> bool:
     for x_ in x.flat:
@@ -116,7 +137,7 @@ def anynan(x: npt.NDArray, nan: Any) -> bool:
     return False
 
 
-@dispatch_ndim
+@dispatch_ndim(layout_free=True)
 @nb.njit(cache=True)
 def nanmax(x: npt.NDArray, nan: Any) -> Any:
     cmp_val = nan
@@ -130,7 +151,7 @@ def nanmax(x: npt.NDArray, nan: Any) -> Any:
     return cmp_val
 
 
-@dispatch_ndim
+@dispatch_ndim(layout_free=True)
 @nb.njit(cache=True)
 def nanmin(x: npt.NDArray, nan: Any) -> Any:
     cmp_val = nan
@@ -327,7 +348,7 @@ def nanvar(x: npt.NDArray, nan: Any, ddof: int = 0) -> Any:
     return _jnanvar(x, nan, ddof=ddof)
 
 
-@dispatch_ndim
+@dispatch_ndim(layout_free=True)
 @nb.njit(cache=True)
 def nanmedian(x: npt.NDArray, nan: Any) -> Any:
     cnt = 0
@@ -354,7 +375,7 @@ def nanstd(x: npt.NDArray, nan: Any, ddof: int = 0) -> Any:
     return np.sqrt(_jnanvar(x, nan, ddof=ddof))
 
 
-@dispatch_ndim
+@dispatch_ndim(layout_free=True)
 @nb.njit(cache=True)
 def nancount(x: npt.NDArray, nan: Any) -> Any:
     cnt = 0
@@ -364,7 +385,7 @@ def nancount(x: npt.NDArray, nan: Any) -> Any:
     return cnt
 
 
-@dispatch_ndim
+@dispatch_ndim(layout_free=True)
 @nb.njit(cache=True)
 def nanptp(x: npt.NDArray, nan: Any) -> Any:
     mx = nan
