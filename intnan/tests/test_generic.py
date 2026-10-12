@@ -1,5 +1,7 @@
 import itertools
 import warnings
+from contextlib import contextmanager
+from typing import Literal
 
 import numpy as np
 import pytest
@@ -26,6 +28,24 @@ _implementations = [impl for impl in [intnan_np, intnan_numba] if impl is not No
 @pytest.fixture(params=_implementations, ids=lambda impl: impl.__name__.split("_")[-1])
 def inn(request):
     return request.param
+
+
+WarningAction = Literal["error", "ignore"]
+
+
+@contextmanager
+def missing_line_warnings(state: WarningAction):
+    """Tolerate what numpy reports for the degenerate reduction lines that the fixtures build.
+
+    An all-missing line warns, a line with a single valid value has no degree of freedom for
+    ``ddof=1``, and both divide by zero. ``state`` comes from the fixture: ``"error"`` while it
+    holds no missing values at all, ``"ignore"`` once it does, so a warning that has nothing to
+    do with the missing values still fails the test.
+    """
+    with warnings.catch_warnings(), np.errstate(invalid="ignore", divide="ignore", over="ignore"):
+        for message in ("All-NaN slice", "Mean of empty", "Degrees of freedom", "invalid value"):
+            warnings.filterwarnings(state, message=message)
+        yield
 
 
 def test_nanval(inn):
@@ -230,21 +250,23 @@ def test_nancumsum_int_promotion(inn):
 
 
 def test_nancumprod(inn, ninp):
-    ref = np.cumprod(inn.fix_invalid(ninp.a, fill_value=1))
-    nanval = inn.nanval(ref)
-    if ninp.nanstate == "allnans":
-        ref[:] = nanval
-    else:
-        for i, val in enumerate(ninp.a):
-            if inn.isnan(val):
-                ref[i] = nanval
-            else:
-                break
-    if issubclass(ninp.a.dtype.type, np.float32):
-        rtol = 1e-4
-    else:
-        rtol = 1e-7
-    np.testing.assert_allclose(inn.nancumprod(ninp.a), ref, rtol=rtol)
+    # the products of the large fixtures exceed the float range, independently of the missing values
+    with missing_line_warnings(ninp.warnings):
+        ref = np.cumprod(inn.fix_invalid(ninp.a, fill_value=1))
+        nanval = inn.nanval(ref)
+        if ninp.nanstate == "allnans":
+            ref[:] = nanval
+        else:
+            for i, val in enumerate(ninp.a):
+                if inn.isnan(val):
+                    ref[i] = nanval
+                else:
+                    break
+        if issubclass(ninp.a.dtype.type, np.float32):
+            rtol = 1e-4
+        else:
+            rtol = 1e-7
+        np.testing.assert_allclose(inn.nancumprod(ninp.a), ref, rtol=rtol)
 
 
 def test_nanprod(inn, ninp):
@@ -261,10 +283,8 @@ def test_nanprod(inn, ninp):
     assert np.isclose(res, ref, rtol=1e-6)
 
 
-@pytest.mark.filterwarnings("ignore:Mean of empty slice")
 def test_nanmean(inn, ninp):
-    with warnings.catch_warnings():
-        warnings.filterwarnings(ninp.warnings, module="numpy")
+    with missing_line_warnings(ninp.warnings):
         ref = np.mean(ninp.a[~inn.isnan(ninp.a)])
         np.testing.assert_equal(inn.nanmean(ninp.a), ref)
 
@@ -275,7 +295,8 @@ def test_nanmedian(inn, ninp):
         ref = np.nan
     else:
         ref = np.median(ninp.a[valid])
-    np.testing.assert_allclose(inn.nanmedian(ninp.a), ref, rtol=1e-6)
+    with missing_line_warnings(ninp.warnings):
+        np.testing.assert_allclose(inn.nanmedian(ninp.a), ref, rtol=1e-6)
 
 
 def test_nanmedian_valid_counts(inn):
@@ -300,16 +321,13 @@ def test_nanarg_duplicates(inn):
 
 @pytest.mark.parametrize("ddof", [0, 1])
 def test_nanstd(inn, ninp, ddof, tolerance=1e-6):
-    with warnings.catch_warnings():
-        warnings.filterwarnings(ninp.warnings, module="numpy")
+    with missing_line_warnings(ninp.warnings):
         ref = np.std(ninp.a[~inn.isnan(ninp.a)], ddof=ddof)
         np.testing.assert_allclose(inn.nanstd(ninp.a, ddof=ddof), ref, rtol=tolerance)
 
 
-@pytest.mark.filterwarnings("ignore:Degrees of freedom")
 def test_nanvar(inn, ninp, tolerance=1e-6):
-    with warnings.catch_warnings():
-        warnings.filterwarnings(ninp.warnings, module="numpy")
+    with missing_line_warnings(ninp.warnings):
         ref = np.var(ninp.a[~inn.isnan(ninp.a)])
         np.testing.assert_allclose(inn.nanvar(ninp.a), ref, rtol=tolerance)
 
@@ -366,7 +384,10 @@ def nimat(request):
         mask[:, 5] = True  # one all-missing column
         mask[3, :] = True  # one all-missing row
     a[mask] = intnan_np.nanval(a)
-    return SimpleNamespace(a=a, mask=mask, nanstate=nanstate, dtype=dtype)
+    # the missingline state has all-missing reduction lines, the partial state a line
+    # with a single valid value, which leaves no degree of freedom for ddof=1
+    warnings = "error" if nanstate == "nonans" else "ignore"
+    return SimpleNamespace(a=a, mask=mask, nanstate=nanstate, dtype=dtype, warnings=warnings)
 
 
 def _accum_reference(inn, a, axis, prod):
@@ -406,18 +427,21 @@ def assert_like_ref(inn, res, ref, rtol=1e-6):
 
 @pytest.mark.parametrize("axis", [0, 1, -1, None])
 def test_nanmin_axis(inn, nimat, axis):
-    assert_like_ref(inn, inn.nanmin(nimat.a, axis=axis), np.nanmin(inn.asfloat(nimat.a), axis=axis))
+    with missing_line_warnings(nimat.warnings):
+        assert_like_ref(inn, inn.nanmin(nimat.a, axis=axis), np.nanmin(inn.asfloat(nimat.a), axis=axis))
 
 
 @pytest.mark.parametrize("axis", [0, 1, -1, None])
 def test_nanmax_axis(inn, nimat, axis):
-    assert_like_ref(inn, inn.nanmax(nimat.a, axis=axis), np.nanmax(inn.asfloat(nimat.a), axis=axis))
+    with missing_line_warnings(nimat.warnings):
+        assert_like_ref(inn, inn.nanmax(nimat.a, axis=axis), np.nanmax(inn.asfloat(nimat.a), axis=axis))
 
 
 def test_nanmin_keepdims(inn, nimat):
-    res = inn.nanmin(nimat.a, axis=1, keepdims=True)
-    assert res.shape == (nimat.a.shape[0], 1)
-    assert_like_ref(inn, res, np.nanmin(inn.asfloat(nimat.a), axis=1, keepdims=True))
+    with missing_line_warnings(nimat.warnings):
+        res = inn.nanmin(nimat.a, axis=1, keepdims=True)
+        assert res.shape == (nimat.a.shape[0], 1)
+        assert_like_ref(inn, res, np.nanmin(inn.asfloat(nimat.a), axis=1, keepdims=True))
 
 
 @pytest.mark.parametrize("axis", [0, 1, -1, None])
@@ -433,26 +457,30 @@ def test_nanprod_axis(inn, nimat, axis):
 
 @pytest.mark.parametrize("axis", [0, 1, -1, None])
 def test_nanmean_axis(inn, nimat, axis):
-    assert_like_ref(inn, inn.nanmean(nimat.a, axis=axis), np.nanmean(inn.asfloat(nimat.a), axis=axis))
+    with missing_line_warnings(nimat.warnings):
+        assert_like_ref(inn, inn.nanmean(nimat.a, axis=axis), np.nanmean(inn.asfloat(nimat.a), axis=axis))
 
 
 @pytest.mark.parametrize("axis", [0, 1, -1, None])
 def test_nanmedian_axis(inn, nimat, axis):
-    assert_like_ref(inn, inn.nanmedian(nimat.a, axis=axis), np.nanmedian(inn.asfloat(nimat.a), axis=axis))
+    with missing_line_warnings(nimat.warnings):
+        assert_like_ref(inn, inn.nanmedian(nimat.a, axis=axis), np.nanmedian(inn.asfloat(nimat.a), axis=axis))
 
 
 @pytest.mark.parametrize("ddof", [0, 1])
 @pytest.mark.parametrize("axis", [0, 1, None])
 def test_nanstd_axis(inn, nimat, axis, ddof):
-    ref = np.nanstd(inn.asfloat(nimat.a), axis=axis, ddof=ddof)
-    assert_like_ref(inn, inn.nanstd(nimat.a, axis=axis, ddof=ddof), ref)
+    with missing_line_warnings(nimat.warnings):
+        ref = np.nanstd(inn.asfloat(nimat.a), axis=axis, ddof=ddof)
+        assert_like_ref(inn, inn.nanstd(nimat.a, axis=axis, ddof=ddof), ref)
 
 
 @pytest.mark.parametrize("ddof", [0, 1])
 @pytest.mark.parametrize("axis", [0, 1, None])
 def test_nanvar_axis(inn, nimat, axis, ddof):
-    ref = np.nanvar(inn.asfloat(nimat.a), axis=axis, ddof=ddof)
-    assert_like_ref(inn, inn.nanvar(nimat.a, axis=axis, ddof=ddof), ref)
+    with missing_line_warnings(nimat.warnings):
+        ref = np.nanvar(inn.asfloat(nimat.a), axis=axis, ddof=ddof)
+        assert_like_ref(inn, inn.nanvar(nimat.a, axis=axis, ddof=ddof), ref)
 
 
 @pytest.mark.parametrize("axis", [0, 1, -1])
@@ -516,12 +544,14 @@ def test_axis_unsupported_dtype(inn):
 
 @pytest.mark.parametrize("axis", [0, 1, -1, None])
 def test_nanpercentile_axis(inn, nimat, axis):
-    afloat = inn.asfloat(nimat.a)
-    assert_like_ref(inn, inn.nanpercentile(nimat.a, 75, axis=axis), np.nanpercentile(afloat, 75, axis=axis))
+    with missing_line_warnings(nimat.warnings):
+        afloat = inn.asfloat(nimat.a)
+        assert_like_ref(inn, inn.nanpercentile(nimat.a, 75, axis=axis), np.nanpercentile(afloat, 75, axis=axis))
 
 
 def test_nanpercentile_median_parity(inn, nimat):
-    np.testing.assert_allclose(inn.nanpercentile(nimat.a, 50, axis=0), inn.nanmedian(nimat.a, axis=0), rtol=1e-6)
+    with missing_line_warnings(nimat.warnings):
+        np.testing.assert_allclose(inn.nanpercentile(nimat.a, 50, axis=0), inn.nanmedian(nimat.a, axis=0), rtol=1e-6)
 
 
 def test_nanpercentile_requires_numeric(inn):
@@ -531,17 +561,21 @@ def test_nanpercentile_requires_numeric(inn):
 
 @pytest.mark.parametrize("axis", [0, 1, None])
 def test_nanquantile_axis(inn, nimat, axis):
-    afloat = inn.asfloat(nimat.a)
-    assert_like_ref(inn, inn.nanquantile(nimat.a, 0.25, axis=axis), np.nanquantile(afloat, 0.25, axis=axis))
-    np.testing.assert_allclose(
-        inn.nanquantile(nimat.a, 0.75, axis=axis), inn.nanpercentile(nimat.a, 75, axis=axis), rtol=1e-6
-    )
+    with missing_line_warnings(nimat.warnings):
+        afloat = inn.asfloat(nimat.a)
+        assert_like_ref(inn, inn.nanquantile(nimat.a, 0.25, axis=axis), np.nanquantile(afloat, 0.25, axis=axis))
+        np.testing.assert_allclose(
+            inn.nanquantile(nimat.a, 0.75, axis=axis), inn.nanpercentile(nimat.a, 75, axis=axis), rtol=1e-6
+        )
 
 
 @pytest.mark.parametrize("axis", [0, 1, -1, None])
 def test_nanptp_axis(inn, nimat, axis):
-    afloat = inn.asfloat(nimat.a)
-    assert_like_ref(inn, inn.nanptp(nimat.a, axis=axis), np.nanmax(afloat, axis=axis) - np.nanmin(afloat, axis=axis))
+    with missing_line_warnings(nimat.warnings):
+        afloat = inn.asfloat(nimat.a)
+        assert_like_ref(
+            inn, inn.nanptp(nimat.a, axis=axis), np.nanmax(afloat, axis=axis) - np.nanmin(afloat, axis=axis)
+        )
 
 
 def test_nanptp_all_missing(inn):
@@ -553,7 +587,8 @@ def test_nanptp_all_missing(inn):
 @pytest.mark.parametrize("axis", [0, 1, None])
 def test_nanaverage_axis(inn, nimat, axis):
     # without weights, nanaverage matches nanmean semantics
-    assert_like_ref(inn, inn.nanaverage(nimat.a, axis=axis), np.nanmean(inn.asfloat(nimat.a), axis=axis))
+    with missing_line_warnings(nimat.warnings):
+        assert_like_ref(inn, inn.nanaverage(nimat.a, axis=axis), np.nanmean(inn.asfloat(nimat.a), axis=axis))
 
 
 def test_nanaverage_weighted(inn, ninp):
@@ -714,9 +749,10 @@ def test_object_arrays(inn):
 
 
 def test_nanpercentile_array_q(inn, nimat):
-    afloat = inn.asfloat(nimat.a)
-    res = inn.nanpercentile(nimat.a, [25, 50, 75], axis=0)
-    assert_like_ref(inn, res, np.nanpercentile(afloat, [25, 50, 75], axis=0))
+    with missing_line_warnings(nimat.warnings):
+        afloat = inn.asfloat(nimat.a)
+        res = inn.nanpercentile(nimat.a, [25, 50, 75], axis=0)
+        assert_like_ref(inn, res, np.nanpercentile(afloat, [25, 50, 75], axis=0))
 
 
 def test_nanpercentile_scalar_positions(inn):
