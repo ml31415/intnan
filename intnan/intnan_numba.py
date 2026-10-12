@@ -505,7 +505,8 @@ def nanpercentile(
         return _impl.nanpercentile(
             x, q, axis=axis, out=out, overwrite_input=overwrite_input, method=method, keepdims=keepdims
         )
-    return _nanpercentile(x, nanval(x), q, True)
+    # the values are collected and sorted, so the flat element order does not matter
+    return _nanpercentile(_memory_order_view(x), nanval(x), q, True)
 
 
 def nanquantile(
@@ -529,7 +530,8 @@ def nanquantile(
         return _impl.nanquantile(
             x, q, axis=axis, out=out, overwrite_input=overwrite_input, method=method, keepdims=keepdims
         )
-    return _nanpercentile(x, nanval(x), q, False)
+    # the values are collected and sorted, so the flat element order does not matter
+    return _nanpercentile(_memory_order_view(x), nanval(x), q, False)
 
 
 @nb.njit(cache=True)
