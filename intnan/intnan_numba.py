@@ -564,4 +564,6 @@ def nanclip(x: npt.NDArray, a_min: npt.ArrayLike | None = None, a_max: npt.Array
         return _impl.nanclip(x, a_min=a_min, a_max=a_max)  # float bounds promote, like np.clip
     if lo > hi:
         return _impl.nanclip(x, a_min=a_min, a_max=a_max)  # keep the np.clip edge-case semantics
-    return _nanclip(x, nanval(x), lo, hi)
+    view = _memory_order_view(x)  # elementwise, so the flat element order does not matter
+    ret = _nanclip(view, nanval(x), lo, hi)
+    return ret if view is x else ret.T
