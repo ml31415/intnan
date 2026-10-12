@@ -507,14 +507,17 @@ def _nanclip(x: npt.NDArray, nan: Any, lo: Any, hi: Any) -> npt.NDArray:
     ret = np.empty_like(x)
     for i in nb.prange(len(x.flat)):
         xi = x.flat[i]
+        # Pick the value into one variable and keep a single store site: numba emits
+        # roughly 14x slower code for a loop with three or more ret.flat[i] assignments,
+        # while two of them (as in fix_invalid) are still as fast as direct indexing.
+        val = xi
         if isnan_vec(xi, nan):
-            ret.flat[i] = nan
+            val = nan
         elif xi < lo:
-            ret.flat[i] = lo
+            val = lo
         elif xi > hi:
-            ret.flat[i] = hi
-        else:
-            ret.flat[i] = xi
+            val = hi
+        ret.flat[i] = val
     return ret
 
 
