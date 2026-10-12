@@ -98,8 +98,8 @@ def isnan_vec(x: npt.NDArray, nan: Any) -> npt.NDArray[np.bool_]:
     return (x == nan) | (x != x)
 
 
-@nancalc
-def fix_invalid(x: npt.NDArray, nan: Any, copy: bool = True, fill_value: Any = 0) -> npt.NDArray:
+@nb.njit(cache=True)
+def _fix_invalid(x: npt.NDArray, nan: Any, copy: bool = True, fill_value: Any = 0) -> npt.NDArray:
     if copy:
         ret = np.empty_like(x)
     else:
@@ -117,6 +117,15 @@ def fix_invalid(x: npt.NDArray, nan: Any, copy: bool = True, fill_value: Any = 0
             else:
                 ret.flat[i] = x.flat[i]
     return ret
+
+
+def fix_invalid(x: npt.NDArray, copy: bool = True, fill_value: Any = 0) -> npt.NDArray:
+    """Replace the missing values of x by fill_value, in place when copy is False."""
+    view = _memory_order_view(x)  # elementwise, so the flat element order does not matter
+    ret = _fix_invalid(view, nanval(x), copy=copy, fill_value=fill_value)
+    if view is x:
+        return ret
+    return x if not copy else ret.T
 
 
 @dispatch_ndim(layout_free=True)
