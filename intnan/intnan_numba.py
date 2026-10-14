@@ -11,6 +11,9 @@ from typing import Any, cast
 import numba as nb
 import numpy as np
 import numpy.typing as npt
+from numba.core.errors import TypingError
+from numba.core.types.abstract import Literal
+from numba.core.types.misc import Omitted
 
 from . import intnan_np as _impl
 from .intnan_np import (
@@ -41,6 +44,62 @@ def _memory_order_view(x: npt.NDArray) -> npt.NDArray:
     return x
 
 
+_RUNTIME = object()  # marker: an argument value that is not known at compile time
+_FLOAT_EPS = np.finfo(float).eps
+
+
+def _compile_time_value(t: Any) -> Any:
+    """Value of an argument at typing time, or _RUNTIME when only known at runtime.
+
+    Numba hands the typing function of an overload the omitted defaults as raw python values,
+    explicit constants as Literal types (after a first pass with plain types was rejected) and
+    runtime values as plain numba types. Raising on _RUNTIME makes numba retry with literals,
+    so the caller gets a precise message instead of a generic typing failure.
+    """
+    if isinstance(t, Omitted):
+        return t.value
+    if t is None or isinstance(t, (bool, int, float, str, tuple)):
+        return t
+    if t == nb.types.none:  # explicit None at the call site
+        return None
+    if isinstance(t, Literal):
+        return t.literal_value
+    return _RUNTIME
+
+
+def _dtype_nanval(x: Any) -> Any:
+    """nanval for a numba array type, resolved at typing time from its static dtype."""
+    return nanval(np.dtype(str(x.dtype)))
+
+
+def _require_flat(name: str, axis: Any, keepdims: Any, keepdims_default: bool = False) -> None:
+    """Raise unless axis and keepdims make the call routable to the flat kernel.
+
+    The numpy fallback for axis/keepdims is python only and cannot run inside compiled code,
+    so jitted callers are restricted to axis=None, keepdims=False, given as constants.
+    """
+    av = _compile_time_value(axis)
+    kv = _compile_time_value(keepdims)
+    if av is _RUNTIME or kv is _RUNTIME:
+        raise TypingError(
+            f"intnan.{name}: axis and keepdims must be compile time constants when called "
+            "from numba; only axis=None, keepdims=False is supported in jitted code."
+        )
+    if av is not None or kv:
+        raise TypingError(
+            f"intnan.{name}: axis and keepdims are not supported in numba code, the numpy "
+            "fallback is python only. Call with axis=None, keepdims=False."
+        )
+
+
+@nb.njit(cache=True)
+def _transposed_if_fortran(x: Any) -> tuple[Any, bool]:
+    """Numba counterpart of _memory_order_view: transpose F ordered input for the kernel."""
+    if x.ndim > 1 and not x.flags.c_contiguous and x.flags.f_contiguous:
+        return x.T, True
+    return x, False
+
+
 def dispatch_ndim(
     func: Callable[..., Any] | None = None, *, axis_default: int | None = None, layout_free: bool = False
 ) -> Any:
@@ -51,6 +110,12 @@ def dispatch_ndim(
     input appended after x. Kernels that other jitted functions call internally must be
     exposed through a separate private dispatcher instead.
 
+    Additionally an overload is registered on the wrapper, so that jitted callers compile the
+    flat kernel directly instead of failing on the pure python wrapper. Compiled code only
+    gets the flat case (axis=None, keepdims=False, compile time constants); anything else
+    raises an informative TypingError, since the numpy fallback cannot run there. The missing
+    value is resolved at typing time from the static dtype, so it costs nothing at runtime.
+
     Kernels of layout free functions do not depend on the flat element order, so a Fortran
     ordered input is handed to them transposed to keep the scan in memory order. Keep the
     check inline rather than calling _memory_order_view, as the per call overhead shows.
@@ -59,6 +124,8 @@ def dispatch_ndim(
     def build(kernel: Callable[..., Any]) -> Callable[..., Any]:
         impl: Any = getattr(_impl, kernel.__name__)
         with_keepdims = "keepdims" in inspect.signature(impl).parameters
+        # parameters of the numpy implementation beyond (x, axis, keepdims); currently only ddof
+        extras = tuple(p for p in inspect.signature(impl).parameters if p not in ("x", "axis", "keepdims"))
 
         def wrapper(
             x: npt.NDArray, axis: Axis = axis_default, keepdims: bool = False, *args: Any, **kwargs: Any
@@ -76,6 +143,35 @@ def dispatch_ndim(
         wrapper.__name__ = kernel.__name__
         wrapper.__qualname__ = kernel.__name__
         wrapper.__doc__ = impl.__doc__
+
+        if not extras:  # the common shape (x, axis, keepdims)
+
+            @nb.extending.overload(wrapper)
+            def numba_call(x: Any, axis: Any = axis_default, keepdims: Any = False) -> Any:
+                _require_flat(kernel.__name__, axis, keepdims)
+                nv = _dtype_nanval(x)
+
+                def flat(x: Any, axis: Any = axis_default, keepdims: Any = False) -> Any:
+                    if layout_free and x.ndim > 1 and not x.flags.c_contiguous and x.flags.f_contiguous:
+                        x = x.T
+                    return kernel(x, nv)
+
+                return flat
+
+        else:  # (x, axis, keepdims, ddof), so that ddof can be passed positionally or by name
+
+            @nb.extending.overload(wrapper)
+            def numba_call(x: Any, axis: Any = axis_default, keepdims: Any = False, ddof: Any = 0) -> Any:
+                _require_flat(kernel.__name__, axis, keepdims)
+                nv = _dtype_nanval(x)
+
+                def flat(x: Any, axis: Any = axis_default, keepdims: Any = False, ddof: Any = 0) -> Any:
+                    if layout_free and x.ndim > 1 and not x.flags.c_contiguous and x.flags.f_contiguous:
+                        x = x.T
+                    return kernel(x, nv, ddof)
+
+                return flat
+
         return wrapper
 
     return build if func is None else build(func)
@@ -89,6 +185,15 @@ def nancalc(func: Callable[..., Any]) -> Callable[..., Any]:
         nv = nanval(args[0])
         args = args + (nv,)
         return jfunc(*args, **kwargs)
+
+    @nb.extending.overload(wrapped)
+    def numba_call(x: Any, y: Any) -> Any:
+        nv = _dtype_nanval(x)
+
+        def flat(x: Any, y: Any) -> Any:
+            return jfunc(x, y, nv)
+
+        return flat
 
     return wrapped
 
@@ -126,6 +231,20 @@ def fix_invalid(x: npt.NDArray, copy: bool = True, fill_value: Any = 0) -> npt.N
     if view is x:
         return ret
     return x if not copy else ret.T
+
+
+@nb.extending.overload(fix_invalid)
+def _ol_fix_invalid(x: Any, copy: Any = True, fill_value: Any = 0) -> Any:
+    nv = _dtype_nanval(x)
+
+    def flat(x: Any, copy: Any = True, fill_value: Any = 0) -> Any:
+        xt, was_f = _transposed_if_fortran(x)  # elementwise, so the flat element order does not matter
+        ret = _fix_invalid(xt, nv, copy, fill_value)
+        if not was_f:
+            return ret
+        return x if not copy else ret.T
+
+    return flat
 
 
 @dispatch_ndim(layout_free=True)
@@ -294,6 +413,32 @@ def nancumsum(x: npt.NDArray, axis: int | None = None) -> npt.NDArray:
     return _impl.nancumsum(x, axis=axis)
 
 
+@nb.extending.overload(nancumsum)
+def _ol_nancumsum(x: Any, axis: Any = None) -> Any:
+    _require_flat("nancumsum", axis, False)
+    if x.ndim != 1:
+        raise TypingError(
+            "intnan.nancumsum: only 1d arrays are supported in jitted code; "
+            "the axis-wise numpy fallback is python only."
+        )
+    nv = _dtype_nanval(x)
+    if isinstance(x.dtype, nb.types.Integer) and x.dtype.bitwidth < 64:
+        # upcast below platform integer width like numpy accumulations do, then translate the marker
+        nv64 = nanval(np.dtype("int64"))
+
+        def flat(x: Any, axis: Any = None) -> Any:
+            up = x.astype(np.int64)
+            up[up == nv] = nv64
+            return _jnancumsum(up, nv64)
+
+    else:
+
+        def flat(x: Any, axis: Any = None) -> Any:
+            return _jnancumsum(x, nv)
+
+    return flat
+
+
 def _nancumprod(x: npt.NDArray, nan: Any) -> npt.NDArray:
     ret = np.full_like(x, nan)
     val = nan
@@ -315,6 +460,31 @@ def nancumprod(x: npt.NDArray, axis: int | None = None) -> npt.NDArray:
     if axis is None and x.ndim == 1:
         return _jnancumprod(_platform_int(x), nanval(_platform_int(x)))
     return _impl.nancumprod(x, axis=axis)
+
+
+@nb.extending.overload(nancumprod)
+def _ol_nancumprod(x: Any, axis: Any = None) -> Any:
+    _require_flat("nancumprod", axis, False)
+    if x.ndim != 1:
+        raise TypingError(
+            "intnan.nancumprod: only 1d arrays are supported in jitted code; "
+            "the axis-wise numpy fallback is python only."
+        )
+    nv = _dtype_nanval(x)
+    if isinstance(x.dtype, nb.types.Integer) and x.dtype.bitwidth < 64:
+        nv64 = nanval(np.dtype("int64"))
+
+        def flat(x: Any, axis: Any = None) -> Any:
+            up = x.astype(np.int64)
+            up[up == nv] = nv64
+            return _jnancumprod(up, nv64)
+
+    else:
+
+        def flat(x: Any, axis: Any = None) -> Any:
+            return _jnancumprod(x, nv)
+
+    return flat
 
 
 @dispatch_ndim
@@ -457,6 +627,25 @@ def nanaverage(
     return _nanaverage(x, nanval(x))
 
 
+@nb.extending.overload(nanaverage)
+def _ol_nanaverage(x: Any, axis: Any = None, weights: Any = None, returned: Any = False, keepdims: Any = False) -> Any:
+    _require_flat("nanaverage", axis, keepdims)
+    if _compile_time_value(weights) is not None:
+        raise TypingError(
+            "intnan.nanaverage: weights are not supported in numba code, the numpy fallback is python only."
+        )
+    if _compile_time_value(returned):
+        raise TypingError(
+            "intnan.nanaverage: returned is not supported in numba code, the numpy fallback is python only."
+        )
+    nv = _dtype_nanval(x)
+
+    def flat(x: Any, axis: Any = None, weights: Any = None, returned: Any = False, keepdims: Any = False) -> Any:
+        return _nanaverage(x, nv)
+
+    return flat
+
+
 @nb.njit(cache=True)
 def _nanpercentile(x: npt.NDArray, nan: Any, q: float, percent: bool) -> Any:
     cnt = 0
@@ -534,9 +723,71 @@ def nanquantile(
     return _nanpercentile(_memory_order_view(x), nanval(x), q, False)
 
 
+@nb.extending.overload(nanpercentile)
+def _ol_nanpercentile(
+    x: Any,
+    q: Any,
+    axis: Any = None,
+    out: Any = None,
+    overwrite_input: Any = False,
+    method: Any = "linear",
+    keepdims: Any = False,
+) -> Any:
+    return _percentile_numba_call("nanpercentile", x, q, axis, out, overwrite_input, method, keepdims, True)
+
+
+@nb.extending.overload(nanquantile)
+def _ol_nanquantile(
+    x: Any,
+    q: Any,
+    axis: Any = None,
+    out: Any = None,
+    overwrite_input: Any = False,
+    method: Any = "linear",
+    keepdims: Any = False,
+) -> Any:
+    return _percentile_numba_call("nanquantile", x, q, axis, out, overwrite_input, method, keepdims, False)
+
+
+def _percentile_numba_call(
+    name: str, x: Any, q: Any, axis: Any, out: Any, overwrite_input: Any, method: Any, keepdims: Any, percent: bool
+) -> Any:
+    """Shared typing time routing of nanpercentile and nanquantile."""
+    _require_flat(name, axis, keepdims)
+    if not isinstance(q, nb.types.Number):
+        raise TypingError(f"intnan.{name}: q must be a scalar in numba code, arrays are not supported.")
+    if _compile_time_value(out) is not None:
+        raise TypingError(f"intnan.{name}: out is not supported in numba code, the numpy fallback is python only.")
+    if _compile_time_value(overwrite_input):
+        raise TypingError(f"intnan.{name}: overwrite_input is not supported in numba code.")
+    if _compile_time_value(method) != "linear":
+        raise TypingError(f"intnan.{name}: only method='linear' is supported in numba code.")
+    nv = _dtype_nanval(x)
+
+    def flat(
+        x: Any,
+        q: Any,
+        axis: Any = None,
+        out: Any = None,
+        overwrite_input: Any = False,
+        method: Any = "linear",
+        keepdims: Any = False,
+    ) -> Any:
+        # the values are collected and sorted, so the flat element order does not matter
+        xt, _ = _transposed_if_fortran(x)
+        return _nanpercentile(xt, nv, q, percent)
+
+    return flat
+
+
 @nb.njit(cache=True)
 def _nanclip(x: npt.NDArray, nan: Any, lo: Any, hi: Any) -> npt.NDArray:
     ret = np.empty_like(x)
+    if lo > hi:  # np.clip edge case: like minimum(maximum(x, lo), hi), a_max wins everywhere
+        for i in nb.prange(len(x.flat)):
+            xi = x.flat[i]
+            ret.flat[i] = nan if isnan_vec(xi, nan) else hi
+        return ret
     for i in nb.prange(len(x.flat)):
         xi = x.flat[i]
         # Pick the value into one variable and keep a single store site: numba emits
@@ -569,3 +820,112 @@ def nanclip(x: npt.NDArray, a_min: npt.ArrayLike | None = None, a_max: npt.Array
     view = _memory_order_view(x)  # elementwise, so the flat element order does not matter
     ret = _nanclip(view, nanval(x), lo, hi)
     return ret if view is x else ret.T
+
+
+@nb.njit(cache=True)
+def _nanequal(x: npt.NDArray, y: npt.NDArray) -> npt.NDArray[np.bool_]:
+    if x.shape != y.shape:
+        raise ValueError("nanequal requires equal shapes; broadcasting is only available in the numpy implementation")
+    ret = np.empty(x.shape, dtype=np.bool_)
+    for i in nb.prange(len(x.flat)):
+        xi = x.flat[i]
+        yi = y.flat[i]
+        ret.flat[i] = xi == yi or (xi != xi and yi != yi)
+    return ret
+
+
+@nb.extending.overload(nanequal)
+def _ol_nanequal(x: Any, y: Any) -> Any:
+    if x.dtype != y.dtype:
+        raise TypingError(f"intnan.nanequal: requires same data type, not {x.dtype} vs {y.dtype}")
+    if not isinstance(x.dtype, (nb.types.Number, nb.types.Boolean)):
+        raise TypingError(f"intnan.nanequal: {x.dtype} arrays are not supported in numba code")
+
+    def flat(x: Any, y: Any) -> Any:
+        return _nanequal(x, y)
+
+    return flat
+
+
+@nb.njit(cache=True)
+def _nanclose(x: npt.NDArray, y: npt.NDArray, delta: float) -> npt.NDArray[np.bool_]:
+    if x.shape != y.shape:
+        raise ValueError("nanclose requires equal shapes; broadcasting is only available in the numpy implementation")
+    ret = np.empty(x.shape, dtype=np.bool_)
+    for i in nb.prange(len(x.flat)):
+        # np.isclose semantics with its default rtol=1e-5, computed in float64 like numpy does
+        xf = float(x.flat[i])
+        yf = float(y.flat[i])
+        xnan = xf != xf
+        ynan = yf != yf
+        if xnan or ynan:
+            ret.flat[i] = xnan and ynan
+        elif np.isfinite(xf) and np.isfinite(yf):
+            ret.flat[i] = abs(xf - yf) <= delta + 1e-5 * abs(yf)
+        else:
+            ret.flat[i] = xf == yf
+    return ret
+
+
+@nb.extending.overload(nanclose)
+def _ol_nanclose(x: Any, y: Any, delta: Any = _FLOAT_EPS) -> Any:
+    if x.dtype != y.dtype:
+        raise TypingError(f"intnan.nanclose: requires same data type, not {x.dtype} vs {y.dtype}")
+    if not isinstance(x.dtype, (nb.types.Number, nb.types.Boolean)):
+        raise TypingError(f"intnan.nanclose: {x.dtype} arrays are not supported in numba code")
+
+    def flat(x: Any, y: Any, delta: Any = _FLOAT_EPS) -> Any:
+        return _nanclose(x, y, delta)
+
+    return flat
+
+
+@nb.extending.overload(nanclip)
+def _ol_nanclip(x: Any, a_min: Any = None, a_max: Any = None) -> Any:
+    dummy = np.empty(0, dtype=np.dtype(str(x.dtype)))
+    if dummy.dtype.kind in "iu" and (isinstance(a_min, nb.types.Float) or isinstance(a_max, nb.types.Float)):
+        raise TypingError(
+            "intnan.nanclip: float bounds on integer arrays promote the result like np.clip, "
+            "which is not supported in numba code; cast the bounds or the array."
+        )
+    # omitted or literal bounds are resolved at typing time, runtime bounds pass through;
+    # NaN bounds need no substitution, the kernel ignores them like the numpy route does
+    lo = _clip_bound_const(a_min, dummy, True)
+    hi = _clip_bound_const(a_max, dummy, False)
+    nv = _dtype_nanval(x)
+
+    if lo is not None and hi is not None:  # both bounds are compile time constants
+
+        def flat(x: Any, a_min: Any = None, a_max: Any = None) -> Any:
+            return _nanclip_flat(x, nv, lo, hi)
+    elif hi is not None:
+
+        def flat(x: Any, a_min: Any = None, a_max: Any = None) -> Any:
+            return _nanclip_flat(x, nv, a_min, hi)
+    elif lo is not None:
+
+        def flat(x: Any, a_min: Any = None, a_max: Any = None) -> Any:
+            return _nanclip_flat(x, nv, lo, a_max)
+    else:
+
+        def flat(x: Any, a_min: Any = None, a_max: Any = None) -> Any:
+            return _nanclip_flat(x, nv, a_min, a_max)
+
+    return flat
+
+
+@nb.njit(cache=True)
+def _nanclip_flat(x: Any, nv: Any, lo: Any, hi: Any) -> Any:
+    xt, was_f = _transposed_if_fortran(x)  # elementwise, so the flat element order does not matter
+    ret = _nanclip(xt, nv, lo, hi)
+    return ret if not was_f else ret.T
+
+
+def _clip_bound_const(bound: Any, dummy: npt.NDArray, low: bool) -> Any:
+    """Clip bound resolved at typing time, or None when only known at runtime."""
+    v = _compile_time_value(bound)
+    if v is _RUNTIME:
+        return None
+    if v is None:
+        return _impl._extreme_value(dummy, high=not low)
+    return _impl._clip_bound(v, dummy, low=low).item()
